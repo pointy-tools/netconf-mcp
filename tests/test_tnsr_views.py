@@ -16,7 +16,7 @@ def _sample_snapshot() -> dict:
         "bgp": {
             "asn": "65001",
             "router_id": "10.0.0.1",
-            "neighbors": [{"peer": "192.0.2.2", "peer_group": "TRANSIT"}],
+            "neighbors": [{"peer": "192.0.2.2", "peer_group": "TRANSIT", "route_map_in": "TRANSIT-IN", "route_map_out": "TRANSIT-OUT"}],
         },
         "prefix_lists": [
             {"name": "AWS-PUBLIC-ANNOUNCE", "rules": [{"sequence": "1", "action": "permit", "prefix": "16.15.176.0/20"}]},
@@ -57,6 +57,14 @@ def test_nacm_view_summarizes_groups_and_rule_lists():
     assert view["summary"]["group_count"] == 1
     assert view["nacm"]["groups"][0]["user_names"] == ["ansible", "root", "tnsr"]
     assert view["nacm"]["rule_lists"][0]["rules"][0]["action"] == "permit"
+
+
+def test_bgp_view_summarizes_policy_attachments():
+    view = build_tnsr_domain_view(_sample_snapshot(), "bgp")
+
+    assert view["summary"]["neighbor_count"] == 1
+    assert view["summary"]["route_map_in_neighbors"] == ["192.0.2.2"]
+    assert view["summary"]["route_map_out_neighbors"] == ["192.0.2.2"]
 
 
 def test_platform_view_summarizes_counts():

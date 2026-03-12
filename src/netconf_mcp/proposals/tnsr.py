@@ -122,6 +122,11 @@ def build_managed_tnsr_config(snapshot: TNSRSnapshot) -> dict[str, Any]:
                 "description": item.description,
                 "update_source": item.update_source,
                 "ebgp_multihop_max_hops": item.ebgp_multihop_max_hops,
+                "activate": item.activate,
+                "route_map_in": item.route_map_in,
+                "route_map_out": item.route_map_out,
+                "default_originate_route_map": item.default_originate_route_map,
+                "send_community_standard": item.send_community_standard,
             }
             for item in snapshot.bgp.neighbors
         ),
@@ -387,6 +392,7 @@ def build_managed_tnsr_config(snapshot: TNSRSnapshot) -> dict[str, Any]:
                 "network_import_check": snapshot.bgp.network_import_check,
                 "keepalive_seconds": snapshot.bgp.keepalive_seconds,
                 "hold_time_seconds": snapshot.bgp.hold_time_seconds,
+                "ipv4_unicast_multipath": snapshot.bgp.ipv4_unicast_multipath,
                 "neighbors": neighbors,
                 "network_announcements": _sorted_unique(snapshot.bgp.network_announcements),
             },
@@ -545,6 +551,7 @@ def build_managed_tnsr_config_from_payload(payload: dict[str, Any]) -> dict[str,
             network_import_check=payload.get("bgp", {}).get("network_import_check"),
             keepalive_seconds=payload.get("bgp", {}).get("keepalive_seconds"),
             hold_time_seconds=payload.get("bgp", {}).get("hold_time_seconds"),
+            ipv4_unicast_multipath=payload.get("bgp", {}).get("ipv4_unicast_multipath"),
             neighbors=[
                 BGPNeighborRecord(
                     peer=item["peer"],
@@ -555,6 +562,11 @@ def build_managed_tnsr_config_from_payload(payload: dict[str, Any]) -> dict[str,
                     description=item.get("description"),
                     update_source=item.get("update_source"),
                     ebgp_multihop_max_hops=item.get("ebgp_multihop_max_hops"),
+                    activate=item.get("activate"),
+                    route_map_in=item.get("route_map_in"),
+                    route_map_out=item.get("route_map_out"),
+                    default_originate_route_map=item.get("default_originate_route_map"),
+                    send_community_standard=item.get("send_community_standard"),
                 )
                 for item in payload.get("bgp", {}).get("neighbors", [])
             ],

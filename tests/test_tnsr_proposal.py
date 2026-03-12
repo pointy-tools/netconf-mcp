@@ -59,8 +59,23 @@ def _sample_snapshot_payload() -> dict:
             "network_import_check": True,
             "keepalive_seconds": 3,
             "hold_time_seconds": 9,
+            "ipv4_unicast_multipath": 8,
             "neighbors": [
-                {"peer": "192.0.2.2", "enabled": True, "bfd": True, "peer_group": "TRANSIT", "remote_asn": "64512", "description": None, "update_source": None, "ebgp_multihop_max_hops": 4}
+                {
+                    "peer": "192.0.2.2",
+                    "enabled": True,
+                    "bfd": True,
+                    "peer_group": "TRANSIT",
+                    "remote_asn": "64512",
+                    "description": None,
+                    "update_source": None,
+                    "ebgp_multihop_max_hops": 4,
+                    "activate": True,
+                    "route_map_in": "TRANSIT-IN",
+                    "route_map_out": "TRANSIT-OUT",
+                    "default_originate_route_map": "DEFAULT-OUT",
+                    "send_community_standard": True
+                }
             ],
             "network_announcements": ["10.0.0.0/24"],
         },
@@ -212,7 +227,12 @@ def test_build_managed_tnsr_config_from_payload_normalizes_and_sorts():
     assert managed["config"]["routing"]["static_routes"][0]["destination_prefix"] == "0.0.0.0/0"
     assert managed["config"]["bgp"]["neighbors"][0]["peer"] == "192.0.2.2"
     assert managed["config"]["bgp"]["ebgp_requires_policy"] is True
+    assert managed["config"]["bgp"]["ipv4_unicast_multipath"] == 8
     assert managed["config"]["bgp"]["neighbors"][0]["bfd"] is True
+    assert managed["config"]["bgp"]["neighbors"][0]["route_map_in"] == "TRANSIT-IN"
+    assert managed["config"]["bgp"]["neighbors"][0]["route_map_out"] == "TRANSIT-OUT"
+    assert managed["config"]["bgp"]["neighbors"][0]["default_originate_route_map"] == "DEFAULT-OUT"
+    assert managed["config"]["bgp"]["neighbors"][0]["send_community_standard"] is True
     assert managed["config"]["routing_policy"]["prefix_lists"][0]["name"] == "DEFAULT-OUT"
     assert managed["config"]["routing_policy"]["route_maps"][0]["name"] == "TRANSIT-OUT"
     assert managed["config"]["bfd"]["sessions"][0]["name"] == "transit-bfd"

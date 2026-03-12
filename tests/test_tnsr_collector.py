@@ -180,6 +180,17 @@ class FakeClient:
                                 "address-families": {
                                     "ipv4": {
                                         "unicast": {
+                                                "multiple-path-maximums": {"non-ibgp-paths": "8"},
+                                                "neighbors": {
+                                                    "neighbor": {
+                                                        "peer": "192.0.2.2",
+                                                        "activate": "true",
+                                                        "route-map-in": "TRANSIT-IN",
+                                                        "route-map-out": "TRANSIT-OUT",
+                                                        "default-originate": {"route-map": "DEFAULT-OUT"},
+                                                        "send-community": {"standard": "true"},
+                                                    }
+                                                },
                                                 "network-announcements": {
                                                     "network": [{"ip-prefix": "10.0.0.0/24"}]
                                                 }
@@ -304,9 +315,15 @@ def test_tnsr_collector_normalizes_interfaces_routes_and_bgp():
     assert payload["bgp"]["vrf_id"] == "default"
     assert payload["bgp"]["ebgp_requires_policy"] is True
     assert payload["bgp"]["keepalive_seconds"] == 3
+    assert payload["bgp"]["ipv4_unicast_multipath"] == 8
     assert payload["bgp"]["neighbors"][0]["peer"] == "192.0.2.2"
     assert payload["bgp"]["neighbors"][0]["bfd"] is True
     assert payload["bgp"]["neighbors"][0]["ebgp_multihop_max_hops"] == 4
+    assert payload["bgp"]["neighbors"][0]["activate"] is True
+    assert payload["bgp"]["neighbors"][0]["route_map_in"] == "TRANSIT-IN"
+    assert payload["bgp"]["neighbors"][0]["route_map_out"] == "TRANSIT-OUT"
+    assert payload["bgp"]["neighbors"][0]["default_originate_route_map"] == "DEFAULT-OUT"
+    assert payload["bgp"]["neighbors"][0]["send_community_standard"] is True
     assert payload["bgp"]["network_announcements"] == ["10.0.0.0/24"]
     assert payload["prefix_lists"][0]["name"] == "DEFAULT-OUT"
     assert payload["prefix_lists"][0]["rules"][0]["prefix"] == "0.0.0.0/0"

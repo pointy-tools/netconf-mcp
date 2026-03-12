@@ -65,6 +65,11 @@ class BGPNeighborRecord:
     description: str | None = None
     update_source: str | None = None
     ebgp_multihop_max_hops: int | None = None
+    activate: bool | None = None
+    route_map_in: str | None = None
+    route_map_out: str | None = None
+    default_originate_route_map: str | None = None
+    send_community_standard: bool | None = None
 
 
 @dataclass
@@ -256,6 +261,7 @@ class BGPSnapshot:
     network_import_check: bool | None = None
     keepalive_seconds: int | None = None
     hold_time_seconds: int | None = None
+    ipv4_unicast_multipath: int | None = None
     neighbors: list[BGPNeighborRecord] = field(default_factory=list)
     network_announcements: list[str] = field(default_factory=list)
 
@@ -467,9 +473,21 @@ class TNSRCollector:
 
         neighbors = []
         neighbor_items = router.get("neighbors", {}).get("neighbor")
+        af_neighbors_by_peer: dict[str, dict[str, Any]] = {}
+        af_neighbor_items = (
+            router.get("address-families", {})
+            .get("ipv4", {})
+            .get("unicast", {})
+            .get("neighbors", {})
+            .get("neighbor")
+        )
+        for item in _as_list(af_neighbor_items):
+            if isinstance(item, dict) and item.get("peer"):
+                af_neighbors_by_peer[str(item.get("peer"))] = item
         for item in _as_list(neighbor_items):
             if not isinstance(item, dict):
                 continue
+            af_neighbor = af_neighbors_by_peer.get(str(item.get("peer")), {})
             neighbors.append(
                 BGPNeighborRecord(
                     peer=str(item.get("peer")),
@@ -480,6 +498,19 @@ class TNSRCollector:
                     description=item.get("description"),
                     update_source=item.get("update-source"),
                     ebgp_multihop_max_hops=_to_int(item.get("ebgp-multihop", {}).get("max-hop-count")),
+                    activate=_to_bool(af_neighbor.get("activate")) if isinstance(af_neighbor, dict) else None,
+                    route_map_in=af_neighbor.get("route-map-in") if isinstance(af_neighbor, dict) else None,
+                    route_map_out=af_neighbor.get("route-map-out") if isinstance(af_neighbor, dict) else None,
+                    default_originate_route_map=(
+                        af_neighbor.get("default-originate", {}).get("route-map")
+                        if isinstance(af_neighbor, dict)
+                        else None
+                    ),
+                    send_community_standard=(
+                        _to_bool(af_neighbor.get("send-community", {}).get("standard"))
+                        if isinstance(af_neighbor, dict)
+                        else None
+                    ),
                 )
             )
 
@@ -505,6 +536,13 @@ class TNSRCollector:
             network_import_check=_to_bool(router.get("network-import-check")),
             keepalive_seconds=_to_int(router.get("timers", {}).get("keep-alive")),
             hold_time_seconds=_to_int(router.get("timers", {}).get("hold-time")),
+            ipv4_unicast_multipath=_to_int(
+                router.get("address-families", {})
+                .get("ipv4", {})
+                .get("unicast", {})
+                .get("multiple-path-maximums", {})
+                .get("non-ibgp-paths")
+            ),
             neighbors=neighbors,
             network_announcements=announcements,
         )

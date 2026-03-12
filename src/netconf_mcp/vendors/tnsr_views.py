@@ -82,6 +82,12 @@ def _bgp_view(snapshot: dict[str, Any]) -> dict[str, Any]:
             "router_id": bgp.get("router_id"),
             "neighbor_count": len(neighbors),
             "peer_groups": sorted({item.get("peer_group") for item in neighbors if item.get("peer_group")}),
+            "route_map_in_neighbors": sorted(
+                item.get("peer") for item in neighbors if item.get("route_map_in")
+            ),
+            "route_map_out_neighbors": sorted(
+                item.get("peer") for item in neighbors if item.get("route_map_out")
+            ),
         },
         "bgp": bgp,
     }
