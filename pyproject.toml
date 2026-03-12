@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "Read-only fixture-first NETCONF MCP server for v1"
 requires-python = ">=3.12"
 dependencies = [
+  "mcp>=1,<2",
   "pydantic>=2.7,<3",
   "lxml>=5.3,<6",
 ]

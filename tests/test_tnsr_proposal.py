@@ -5,6 +5,8 @@ from pathlib import Path
 
 from netconf_mcp.proposals.tnsr import (
     build_managed_tnsr_config_from_payload,
+    build_split_managed_tnsr_files,
+    build_split_tnsr_proposal_index,
     build_tnsr_proposal_artifacts,
 )
 
@@ -199,3 +201,46 @@ def test_build_tnsr_proposal_artifacts_shows_update_diff(tmp_path: Path):
     assert "+      \"prefix_lists\": [" in proposal_text
     assert "+      \"sessions\": [" in proposal_text
     assert "+      \"rulesets\": [" in proposal_text
+
+
+def test_build_split_managed_tnsr_files_groups_by_domain():
+    candidate = build_managed_tnsr_config_from_payload(_sample_snapshot_payload())
+
+    files = build_split_managed_tnsr_files(candidate)
+
+    assert "device.json" in files
+    assert "interfaces.json" in files
+    assert "routing/bgp.json" in files
+    assert "routing/prefix-lists.json" in files
+    assert "services/bfd.json" in files
+    assert "security/nat-rulesets.json" in files
+    assert "security/acl-rulesets.json" in files
+    assert "security/interface-policy-bindings.json" in files
+    assert "observed-state.json" not in files
+    assert "\"name\": \"WAN-nat\"" in files["security/nat-rulesets.json"]
+    assert "\"name\": \"LAN-filter\"" in files["security/acl-rulesets.json"]
+
+
+def test_build_split_managed_tnsr_files_can_include_observed_state():
+    candidate = build_managed_tnsr_config_from_payload(_sample_snapshot_payload())
+
+    files = build_split_managed_tnsr_files(candidate, include_observed_state=True)
+
+    assert "observed-state.json" in files
+    assert "\"observed_state\"" in files["observed-state.json"]
+
+
+def test_build_split_tnsr_proposal_index_reports_per_file_create(tmp_path: Path):
+    candidate = build_managed_tnsr_config_from_payload(_sample_snapshot_payload())
+    files = build_split_managed_tnsr_files(candidate)
+    managed_root = tmp_path / "managed-configs" / "tnsr" / "tnsr-lab"
+
+    proposal_text = build_split_tnsr_proposal_index(
+        managed_root=managed_root,
+        file_map=files,
+    )
+
+    assert "### `" in proposal_text
+    assert "Action: `create`" in proposal_text
+    assert "security/nat-rulesets.json" in proposal_text
+    assert "services/bfd.json" in proposal_text

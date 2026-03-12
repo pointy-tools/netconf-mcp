@@ -40,6 +40,19 @@ def _load_json(path: Path) -> dict[str, Any] | None:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def render_text_diff(*, current_text: str, candidate_text: str, path_label: str) -> str:
+    diff_lines = list(
+        unified_diff(
+            current_text.splitlines(),
+            candidate_text.splitlines(),
+            fromfile=path_label,
+            tofile=f"{path_label} (proposed)",
+            lineterm="",
+        )
+    )
+    return "\n".join(diff_lines) if diff_lines else "No changes."
+
+
 def build_managed_tnsr_config(snapshot: TNSRSnapshot) -> dict[str, Any]:
     """Project a live snapshot into a stable repo-managed config shape."""
 
@@ -268,6 +281,54 @@ def build_managed_tnsr_config(snapshot: TNSRSnapshot) -> dict[str, Any]:
     }
 
 
+def build_split_managed_tnsr_files(
+    candidate_config: dict[str, Any],
+    *,
+    include_observed_state: bool = False,
+) -> dict[str, str]:
+    """Project the managed config into smaller repo-facing files by domain."""
+
+    files: dict[str, dict[str, Any]] = {
+        "device.json": {
+            "schema_version": candidate_config["schema_version"],
+            "device": candidate_config["device"],
+            "metadata": candidate_config["metadata"],
+        },
+        "interfaces.json": {
+            "interfaces": candidate_config["config"]["interfaces"],
+        },
+        "routing/static-routes.json": {
+            "static_routes": candidate_config["config"]["routing"]["static_routes"],
+        },
+        "routing/bgp.json": {
+            "bgp": candidate_config["config"]["bgp"],
+        },
+        "routing/prefix-lists.json": {
+            "prefix_lists": candidate_config["config"]["routing_policy"]["prefix_lists"],
+        },
+        "routing/route-maps.json": {
+            "route_maps": candidate_config["config"]["routing_policy"]["route_maps"],
+        },
+        "services/bfd.json": {
+            "bfd": candidate_config["config"]["bfd"],
+        },
+        "security/nat-rulesets.json": {
+            "nat": candidate_config["config"]["nat"],
+        },
+        "security/acl-rulesets.json": {
+            "acl_rulesets": candidate_config["config"]["acl"]["rulesets"],
+        },
+        "security/interface-policy-bindings.json": {
+            "interface_bindings": candidate_config["config"]["acl"]["interface_bindings"],
+        },
+    }
+    if include_observed_state:
+        files["observed-state.json"] = {
+            "observed_state": candidate_config["observed_state"],
+        }
+    return {path: _render_json(payload) for path, payload in files.items()}
+
+
 def build_managed_tnsr_config_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
     """Helper for CLI/tests that start from JSON payloads."""
 
@@ -459,16 +520,11 @@ def build_tnsr_proposal_artifacts(
     existing = _load_json(managed_path)
     current_text = _render_json(existing) if existing is not None else ""
     candidate_text = _render_json(candidate_config)
-    diff_lines = list(
-        unified_diff(
-            current_text.splitlines(),
-            candidate_text.splitlines(),
-            fromfile=str(managed_path),
-            tofile=f"{managed_path} (proposed)",
-            lineterm="",
-        )
+    diff_text = render_text_diff(
+        current_text=current_text,
+        candidate_text=candidate_text,
+        path_label=str(managed_path),
     )
-    diff_text = "\n".join(diff_lines) if diff_lines else "No changes."
 
     summary = _proposal_summary(existing, candidate_config)
     proposal_lines = [
@@ -492,3 +548,43 @@ def build_tnsr_proposal_artifacts(
         ]
     )
     return "\n".join(proposal_lines), candidate_text
+
+
+def build_split_tnsr_proposal_index(
+    *,
+    managed_root: Path,
+    file_map: dict[str, str],
+) -> str:
+    lines = [
+        "# TNSR Split Managed Config Proposal",
+        "",
+        f"Managed root: `{managed_root}`",
+        "",
+        "## Files",
+        "",
+    ]
+
+    for rel_path in sorted(file_map):
+        output_path = managed_root / rel_path
+        current_text = output_path.read_text(encoding="utf-8") if output_path.exists() else ""
+        candidate_text = file_map[rel_path]
+        status = "update" if output_path.exists() else "create"
+        diff_text = render_text_diff(
+            current_text=current_text,
+            candidate_text=candidate_text,
+            path_label=str(output_path),
+        )
+        lines.extend(
+            [
+                f"### `{output_path}`",
+                "",
+                f"- Action: `{status}`",
+                "",
+                "```diff",
+                diff_text,
+                "```",
+                "",
+            ]
+        )
+
+    return "\n".join(lines)
