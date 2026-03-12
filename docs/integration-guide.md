@@ -98,3 +98,46 @@ The smoke runner always executes:
 5. `netconf.get_monitoring`
 6. profile-selected `datastore.get_config` probes
 7. optional `datastore.get`
+
+## Normalized TNSR snapshot
+
+Use the snapshot collector when you want a stable JSON artifact to diff against code-managed configuration:
+
+```bash
+python scripts/tnsr_snapshot.py \
+  --inventory lab-inventory.json \
+  --target-ref target://lab/tnsr \
+  --hostkey-policy accept-new \
+  --output tnsr-snapshot.json
+```
+
+The snapshot currently normalizes:
+
+- device identity
+- NETCONF capabilities
+- module inventory
+- interfaces
+- static routes
+- BGP global config and neighbors
+
+## Snapshot-to-code proposal flow
+
+Use the proposal generator when you want a safe repo-facing candidate change instead of touching the device:
+
+```bash
+python scripts/tnsr_propose.py \
+  --snapshot tnsr-snapshot.json
+```
+
+By default this writes:
+
+- `managed-configs/tnsr/<device>.json`: canonical file path the repo can manage over time
+- `proposals/tnsr/<device>.candidate.json`: candidate config rendered from the latest snapshot
+- `proposals/tnsr/<device>.md`: markdown summary plus unified diff against the canonical managed file
+
+This is the intended near-term loop for TNSR:
+
+1. collect a read-only snapshot from the live device
+2. generate a proposed repo-side config update
+3. review the proposal and decide how your source-of-truth should change
+4. let your deployment workflow handle device changes later

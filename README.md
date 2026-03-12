@@ -72,6 +72,9 @@ What is working now:
 - NACM-restricted read behavior
 - transport failure reporting
 - guarded write planning, validation, confirmation gating, and rollback simulation
+- experimental live read-only TNSR NETCONF probing
+- normalized TNSR snapshot generation for code-diff workflows
+- TNSR managed-config proposal generation from normalized snapshots
 
 What is still intentionally deferred:
 
