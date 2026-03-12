@@ -120,9 +120,9 @@ class DummyLiveClient:
                     "options": {"interfaces": {"interface": {"if-name": "WAN", "nat-ruleset": "WAN-nat", "filter-ruleset": "WAN-filter"}}},
                 },
             }
-        elif xpath == "/interfaces/interface[name='eth0']/enabled":
+        elif xpath == "/interfaces-config/interface[name='LAN']/enabled":
             value = "true"
-        elif xpath == "/large":
+        elif xpath == "/logging-config":
             value = {"payload": "x" * 16000}
         elif xpath == "/route-config":
             value = {
@@ -536,7 +536,7 @@ def test_live_read_only_target_can_be_probed_with_dummy_client(tmp_path: Path):
     config = tool._tools["datastore.get_config"](
         {
             "session_ref": session_ref,
-            "arguments": {"datastore": "running", "xpath": "/interfaces/interface[name='eth0']/enabled"},
+            "arguments": {"datastore": "running", "xpath": "/interfaces-config/interface[name='LAN']/enabled"},
         }
     )
     assert config["status"] == "ok"
@@ -569,13 +569,13 @@ def test_datastore_get_config_accepts_xpath_filter_alias_for_live_reads(tmp_path
             "session_ref": session_ref,
             "arguments": {
                 "datastore": "running",
-                "xpath_filter": "/interfaces/interface[name='eth0']/enabled",
+                "xpath_filter": "/interfaces-config/interface[name='LAN']/enabled",
             },
         }
     )
 
     assert config["status"] == "ok"
-    assert config["data"]["resource"]["filter"] == "/interfaces/interface[name='eth0']/enabled"
+    assert config["data"]["resource"]["filter"] == "/interfaces-config/interface[name='LAN']/enabled"
     assert config["data"]["value"] == "true"
 
 
@@ -592,7 +592,7 @@ def test_datastore_get_config_rejects_conflicting_filter_arguments(tmp_path: Pat
             "session_ref": session_ref,
             "arguments": {
                 "datastore": "running",
-                "xpath": "/interfaces/interface[name='eth0']/enabled",
+                "xpath": "/interfaces-config/interface[name='LAN']/enabled",
                 "xpath_filter": "/different/path",
             },
         }
@@ -615,7 +615,7 @@ def test_datastore_get_config_trims_large_live_payloads(tmp_path: Path):
             "session_ref": session_ref,
             "arguments": {
                 "datastore": "running",
-                "xpath_filter": "/large",
+                "xpath_filter": "/logging-config",
             },
         }
     )
@@ -624,6 +624,28 @@ def test_datastore_get_config_trims_large_live_payloads(tmp_path: Path):
     assert config["data"]["source_metadata"]["response_truncated"] is True
     assert "raw_xml" not in config["data"]
     assert config["data"]["response_summary"]["reason"] == "large_datastore_read"
+
+
+def test_tnsr_config_reads_reject_non_tnsr_vendor_roots(tmp_path: Path):
+    inventory_path = _write_live_inventory(tmp_path)
+    runtime = create_server(FIXTURES, inventory_path=inventory_path, live_client=DummyLiveClient())
+    tool = runtime.get_server()
+
+    opened = tool._tools["netconf.open_session"]({"target_ref": "target://lab/tnsr"})
+    session_ref = opened["data"]["session_ref"]
+
+    config = tool._tools["datastore.get_config"](
+        {
+            "session_ref": session_ref,
+            "arguments": {
+                "datastore": "running",
+                "xpath_filter": "/frr-routing:routing/control-plane-protocols/control-plane-protocol/frr-bgp:bgp/global/afi-safis/afi-safi/filter-config",
+            },
+        }
+    )
+
+    assert config["status"] == "error"
+    assert config["error"]["error_code"] == "UNSUPPORTED_VENDOR_PATH"
 
 
 def test_tnsr_domain_view_returns_compact_prefix_list_view_for_live_session(tmp_path: Path):

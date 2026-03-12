@@ -50,6 +50,21 @@ def test_prefix_lists_view_summarizes_names_and_rule_counts():
     assert view["prefix_lists"][1]["rules"][0]["prefix"] == "0.0.0.0/0"
 
 
+def test_route_maps_view_summarizes_policy_shape():
+    snapshot = _sample_snapshot()
+    snapshot["route_maps"] = [
+        {"name": "TRANSIT-IN", "rules": [{"sequence": "10", "policy": "permit", "match_ip_prefix_list": "AWS-PUBLIC-ANNOUNCE"}]},
+        {"name": "TRANSIT-OUT", "rules": [{"sequence": "10", "policy": "permit", "set_as_path_prepend": "65001"}, {"sequence": "100", "policy": "deny"}]},
+    ]
+
+    view = build_tnsr_domain_view(snapshot, "route-maps")
+
+    assert view["summary"]["route_map_count"] == 2
+    assert view["summary"]["prefix_list_refs"] == ["AWS-PUBLIC-ANNOUNCE"]
+    assert view["summary"]["deny_rule_counts"]["TRANSIT-OUT"] == 1
+    assert view["summary"]["as_path_prepends"]["TRANSIT-OUT"] == ["65001"]
+
+
 def test_nacm_view_summarizes_groups_and_rule_lists():
     view = build_tnsr_domain_view(_sample_snapshot(), "nacm")
 
@@ -65,6 +80,24 @@ def test_bgp_view_summarizes_policy_attachments():
     assert view["summary"]["neighbor_count"] == 1
     assert view["summary"]["route_map_in_neighbors"] == ["192.0.2.2"]
     assert view["summary"]["route_map_out_neighbors"] == ["192.0.2.2"]
+
+
+def test_nat_and_filter_views_summarize_interfaces_and_protocol_sets():
+    view_nat = build_tnsr_domain_view(_sample_snapshot(), "nat")
+    view_filters = build_tnsr_domain_view(_sample_snapshot(), "filters")
+
+    assert view_nat["summary"]["translation_interfaces"] == []
+    assert view_filters["summary"]["protocol_sets"] == []
+
+    snapshot = _sample_snapshot()
+    snapshot["nat_rulesets"] = [{"name": "WAN-nat", "rules": [{"sequence": "1000", "translation_interface": "WAN"}]}]
+    snapshot["acl_rulesets"] = [{"name": "WAN-filter", "rules": [{"sequence": "30", "direction": "in", "protocol_set": "icmp"}]}]
+    view_nat = build_tnsr_domain_view(snapshot, "nat")
+    view_filters = build_tnsr_domain_view(snapshot, "filters")
+
+    assert view_nat["summary"]["translation_interfaces"] == ["WAN"]
+    assert view_filters["summary"]["protocol_sets"] == ["icmp"]
+    assert view_filters["summary"]["direction_counts"]["WAN-filter"]["in"] == 1
 
 
 def test_platform_view_summarizes_counts():

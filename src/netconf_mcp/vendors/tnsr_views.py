@@ -108,12 +108,34 @@ def _prefix_lists_view(snapshot: dict[str, Any]) -> dict[str, Any]:
 
 def _route_maps_view(snapshot: dict[str, Any]) -> dict[str, Any]:
     route_maps = list(snapshot.get("route_maps", []))
+    prefix_list_refs = sorted(
+        {
+            rule.get("match_ip_prefix_list")
+            for item in route_maps
+            for rule in item.get("rules", [])
+            if rule.get("match_ip_prefix_list")
+        }
+    )
+    as_path_prepends = {
+        item.get("name"): [
+            rule.get("set_as_path_prepend")
+            for rule in item.get("rules", [])
+            if rule.get("set_as_path_prepend")
+        ]
+        for item in route_maps
+    }
     return {
         "domain": "route-maps",
         "summary": {
             "route_map_count": len(route_maps),
             "names": [item.get("name") for item in route_maps],
             "rule_counts": {item.get("name"): len(item.get("rules", [])) for item in route_maps},
+            "prefix_list_refs": prefix_list_refs,
+            "deny_rule_counts": {
+                item.get("name"): sum(1 for rule in item.get("rules", []) if rule.get("policy") == "deny")
+                for item in route_maps
+            },
+            "as_path_prepends": as_path_prepends,
         },
         "route_maps": route_maps,
     }
@@ -139,6 +161,14 @@ def _nat_view(snapshot: dict[str, Any]) -> dict[str, Any]:
             "ruleset_count": len(rulesets),
             "rule_count": sum(len(item.get("rules", [])) for item in rulesets),
             "names": [item.get("name") for item in rulesets],
+            "translation_interfaces": sorted(
+                {
+                    rule.get("translation_interface")
+                    for item in rulesets
+                    for rule in item.get("rules", [])
+                    if rule.get("translation_interface")
+                }
+            ),
         },
         "nat_rulesets": rulesets,
     }
@@ -147,12 +177,29 @@ def _nat_view(snapshot: dict[str, Any]) -> dict[str, Any]:
 def _filters_view(snapshot: dict[str, Any]) -> dict[str, Any]:
     rulesets = list(snapshot.get("acl_rulesets", []))
     bindings = list(snapshot.get("interface_policy_bindings", []))
+    direction_counts = {
+        item.get("name"): {
+            "in": sum(1 for rule in item.get("rules", []) if rule.get("direction") == "in"),
+            "out": sum(1 for rule in item.get("rules", []) if rule.get("direction") == "out"),
+        }
+        for item in rulesets
+    }
+    protocol_sets = sorted(
+        {
+            rule.get("protocol_set")
+            for item in rulesets
+            for rule in item.get("rules", [])
+            if rule.get("protocol_set")
+        }
+    )
     return {
         "domain": "filters",
         "summary": {
             "ruleset_count": len(rulesets),
             "interface_binding_count": len(bindings),
             "names": [item.get("name") for item in rulesets],
+            "direction_counts": direction_counts,
+            "protocol_sets": protocol_sets,
         },
         "acl_rulesets": rulesets,
         "interface_policy_bindings": bindings,

@@ -664,6 +664,19 @@ class NetconfMCPServer:
             )
 
         xpath = args.get("xpath") or args.get("xpath_filter")
+        vendor_filter_error = self._validate_vendor_filter(
+            session_ref=request["session_ref"],
+            xpath=xpath,
+            strict_config=strict_config,
+        )
+        if vendor_filter_error:
+            return self._error(
+                request["operation_id"],
+                tool_name,
+                request["target_ref"],
+                vendor_filter_error,
+                session_ref=request["session_ref"],
+            )
         try:
             status, payload = self.engine.datastore_get(
                 request["session_ref"],
@@ -888,6 +901,59 @@ class NetconfMCPServer:
         }
         guarded.pop("raw_xml", None)
         return guarded
+
+    def _validate_vendor_filter(
+        self,
+        *,
+        session_ref: str | None,
+        xpath: str | None,
+        strict_config: bool,
+    ) -> dict[str, Any] | None:
+        if not strict_config or not xpath or not session_ref:
+            return None
+        try:
+            session = self.engine._require_session(session_ref)
+        except KeyError:
+            return None
+        target = self.engine._target_by_ref(session.target_ref)
+        facts = target.get("facts", {})
+        if facts.get("os") != "tnsr":
+            return None
+
+        root = xpath.strip("/").split("/", 1)[0]
+        root_local = root.split("[", 1)[0].split(":")[-1]
+        known_tnsr_roots = {
+            "bfd-config",
+            "dataplane-config",
+            "host-if-config",
+            "interfaces-config",
+            "logging-config",
+            "nacm",
+            "prometheus-exporter",
+            "route-config",
+            "route-table-config",
+            "ssh-server-config",
+            "sysctl-config",
+            "system",
+            "vpf-config",
+        }
+        if root_local in known_tnsr_roots:
+            return None
+        return {
+            "status": "error",
+            "error_category": "schema",
+            "error_code": "UNSUPPORTED_VENDOR_PATH",
+            "error_type": "UNSUPPORTED_VENDOR_PATH",
+            "error_tag": "invalid-value",
+            "error_message": (
+                f"XPath root '{root}' does not match known TNSR config roots. "
+                "Use tnsr.get_domain_view for TNSR policy/config questions or a TNSR-native root like /route-config."
+            ),
+            "suggested_next_steps": [
+                "Use tnsr.get_domain_view with domain=prefix-lists, route-maps, bgp, filters, nat, nacm, management, or platform",
+                "Retry with a TNSR-native xpath such as /route-config/dynamic/prefix-lists",
+            ],
+        }
 
     def get_server(self):
         return self.server
