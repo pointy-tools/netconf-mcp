@@ -215,6 +215,37 @@ class PrometheusExporterSnapshot:
 
 
 @dataclass
+class NACMGroupRecord:
+    name: str
+    user_names: list[str] = field(default_factory=list)
+
+
+@dataclass
+class NACMRuleRecord:
+    name: str
+    module_name: str | None = None
+    access_operations: str | None = None
+    action: str | None = None
+
+
+@dataclass
+class NACMRuleListRecord:
+    name: str
+    group: str | None = None
+    rules: list[NACMRuleRecord] = field(default_factory=list)
+
+
+@dataclass
+class NACMSnapshot:
+    enabled: bool | None = None
+    read_default: str | None = None
+    write_default: str | None = None
+    exec_default: str | None = None
+    groups: list[NACMGroupRecord] = field(default_factory=list)
+    rule_lists: list[NACMRuleListRecord] = field(default_factory=list)
+
+
+@dataclass
 class BGPSnapshot:
     asn: str | None = None
     router_id: str | None = None
@@ -253,6 +284,7 @@ class TNSRSnapshot:
     system: SystemSnapshot
     logging: LoggingSnapshot
     prometheus_exporter: PrometheusExporterSnapshot
+    nacm: NACMSnapshot
     raw_sections: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -294,6 +326,7 @@ class TNSRCollector:
         system = self._collect_system(config)
         logging = self._collect_logging(config)
         prometheus_exporter = self._collect_prometheus_exporter(config)
+        nacm = self._collect_nacm(config)
 
         return TNSRSnapshot(
             snapshot_type="tnsr-normalized-config-v1",
@@ -325,6 +358,7 @@ class TNSRCollector:
             system=system,
             logging=logging,
             prometheus_exporter=prometheus_exporter,
+            nacm=nacm,
             raw_sections={
                 "config_root_keys": sorted(config.keys()) if isinstance(config, dict) else [],
                 "monitoring_sessions": monitoring.get("sessions", []),
@@ -742,6 +776,55 @@ class TNSRCollector:
             return PrometheusExporterSnapshot()
         return PrometheusExporterSnapshot(
             host_space_filter=exporter.get("host-space", {}).get("filters", {}).get("filter"),
+        )
+
+    def _collect_nacm(self, config: dict[str, Any]) -> NACMSnapshot:
+        nacm = config.get("nacm", {})
+        if not isinstance(nacm, dict):
+            return NACMSnapshot()
+
+        groups = []
+        for item in _as_list(nacm.get("groups", {}).get("group")):
+            if not isinstance(item, dict):
+                continue
+            groups.append(
+                NACMGroupRecord(
+                    name=str(item.get("name")),
+                    user_names=sorted(str(value) for value in _as_list(item.get("user-name")) if value is not None),
+                )
+            )
+
+        rule_lists = []
+        for item in _as_list(nacm.get("rule-list")):
+            if not isinstance(item, dict):
+                continue
+            rules = []
+            for rule in _as_list(item.get("rule")):
+                if not isinstance(rule, dict):
+                    continue
+                rules.append(
+                    NACMRuleRecord(
+                        name=str(rule.get("name")),
+                        module_name=rule.get("module-name"),
+                        access_operations=rule.get("access-operations"),
+                        action=rule.get("action"),
+                    )
+                )
+            rule_lists.append(
+                NACMRuleListRecord(
+                    name=str(item.get("name")),
+                    group=item.get("group"),
+                    rules=rules,
+                )
+            )
+
+        return NACMSnapshot(
+            enabled=_to_bool(nacm.get("enable-nacm")),
+            read_default=nacm.get("read-default"),
+            write_default=nacm.get("write-default"),
+            exec_default=nacm.get("exec-default"),
+            groups=groups,
+            rule_lists=rule_lists,
         )
 
     @staticmethod

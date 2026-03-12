@@ -127,6 +127,29 @@ def _sample_snapshot_payload() -> dict:
             {"interface": "LAN", "nat_ruleset": None, "filter_ruleset": "LAN-filter"},
             {"interface": "WAN", "nat_ruleset": "WAN-nat", "filter_ruleset": "WAN-filter"},
         ],
+        "nacm": {
+            "enabled": True,
+            "read_default": "deny",
+            "write_default": "deny",
+            "exec_default": "deny",
+            "groups": [
+                {"name": "admin", "user_names": ["ansible", "root", "tnsr"]}
+            ],
+            "rule_lists": [
+                {
+                    "name": "admin-rules",
+                    "group": "admin",
+                    "rules": [
+                        {
+                            "name": "permit-all",
+                            "module_name": "*",
+                            "access_operations": "*",
+                            "action": "permit",
+                        }
+                    ],
+                }
+            ],
+        },
         "ssh_server": {
             "netconf_enabled": True,
             "netconf_port": 830,
@@ -196,6 +219,8 @@ def test_build_managed_tnsr_config_from_payload_normalizes_and_sorts():
     assert managed["config"]["nat"]["rulesets"][0]["name"] == "WAN-nat"
     assert managed["config"]["acl"]["rulesets"][0]["name"] == "LAN-filter"
     assert managed["config"]["acl"]["interface_bindings"][0]["interface"] == "LAN"
+    assert managed["config"]["nacm"]["groups"][0]["name"] == "admin"
+    assert managed["config"]["nacm"]["rule_lists"][0]["rules"][0]["action"] == "permit"
     assert managed["observed_state"]["netconf_capabilities"] == [
         "urn:ietf:params:netconf:base:1.1",
         "urn:ietf:params:netconf:capability:candidate:1.0",
@@ -217,6 +242,7 @@ def test_build_tnsr_proposal_artifacts_reports_create_when_managed_file_missing(
     assert "BFD sessions: 0 -> 1" in proposal_text
     assert "NAT rulesets: 0 -> 1" in proposal_text
     assert "ACL rulesets: 0 -> 1" in proposal_text
+    assert "NACM rule lists: 0 -> 1" in proposal_text
     assert "Host interfaces: 0 -> 1" in proposal_text
     assert "Sysctl settings: 0 -> 2" in proposal_text
     assert "Kernel modules: 0 -> 1" in proposal_text
@@ -248,6 +274,7 @@ def test_build_tnsr_proposal_artifacts_shows_update_diff(tmp_path: Path):
                     "bfd": {"sessions": []},
                     "nat": {"rulesets": []},
                     "acl": {"rulesets": [], "interface_bindings": []},
+                    "nacm": {"groups": [], "rule_lists": []},
                 },
                 "observed_state": {"netconf_capabilities": [], "yang_modules": []},
                 "metadata": {"generated_from_snapshot_type": "tnsr-normalized-config-v1", "collected_at_utc": "2026-03-12T00:00:00+00:00"},
@@ -292,9 +319,11 @@ def test_build_split_managed_tnsr_files_groups_by_domain():
     assert "security/nat-rulesets.json" in files
     assert "security/acl-rulesets.json" in files
     assert "security/interface-policy-bindings.json" in files
+    assert "security/nacm.json" in files
     assert "observed-state.json" not in files
     assert "\"name\": \"WAN-nat\"" in files["security/nat-rulesets.json"]
     assert "\"name\": \"LAN-filter\"" in files["security/acl-rulesets.json"]
+    assert "\"admin-rules\"" in files["security/nacm.json"]
     assert "\"netconf_port\": 830" in files["management/ssh-server.json"]
     assert "\"localhost\"" in files["management/logging.json"]
     assert "\"cpu_workers\": 6" in files["platform/dataplane.json"]
@@ -324,6 +353,7 @@ def test_build_split_tnsr_proposal_index_reports_per_file_create(tmp_path: Path)
     assert "Action: `create`" in proposal_text
     assert "security/nat-rulesets.json" in proposal_text
     assert "services/bfd.json" in proposal_text
+    assert "security/nacm.json" in proposal_text
     assert "management/ssh-server.json" in proposal_text
     assert "management/logging.json" in proposal_text
     assert "platform/dataplane.json" in proposal_text

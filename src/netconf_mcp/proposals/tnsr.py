@@ -20,6 +20,10 @@ from netconf_mcp.vendors.tnsr import (
     InterfacePolicyBindingRecord,
     LoggingRemoteServerRecord,
     LoggingSnapshot,
+    NACMGroupRecord,
+    NACMRuleListRecord,
+    NACMRuleRecord,
+    NACMSnapshot,
     NATRuleRecord,
     NATRulesetRecord,
     PrefixListRecord,
@@ -285,6 +289,37 @@ def build_managed_tnsr_config(snapshot: TNSRSnapshot) -> dict[str, Any]:
         key=lambda item: item["name"],
     )
 
+    nacm_groups = sorted(
+        (
+            {
+                "name": item.name,
+                "user_names": list(item.user_names),
+            }
+            for item in snapshot.nacm.groups
+        ),
+        key=lambda item: item["name"],
+    )
+
+    nacm_rule_lists = sorted(
+        (
+            {
+                "name": item.name,
+                "group": item.group,
+                "rules": [
+                    {
+                        "name": rule.name,
+                        "module_name": rule.module_name,
+                        "access_operations": rule.access_operations,
+                        "action": rule.action,
+                    }
+                    for rule in item.rules
+                ],
+            }
+            for item in snapshot.nacm.rule_lists
+        ),
+        key=lambda item: item["name"],
+    )
+
     capabilities = _sorted_unique(snapshot.capabilities)
     module_inventory = sorted(
         (
@@ -369,6 +404,14 @@ def build_managed_tnsr_config(snapshot: TNSRSnapshot) -> dict[str, Any]:
                 "rulesets": acl_rulesets,
                 "interface_bindings": interface_policy_bindings,
             },
+            "nacm": {
+                "enabled": snapshot.nacm.enabled,
+                "read_default": snapshot.nacm.read_default,
+                "write_default": snapshot.nacm.write_default,
+                "exec_default": snapshot.nacm.exec_default,
+                "groups": nacm_groups,
+                "rule_lists": nacm_rule_lists,
+            },
         },
         "observed_state": {
             "netconf_capabilities": capabilities,
@@ -441,6 +484,9 @@ def build_split_managed_tnsr_files(
         },
         "security/interface-policy-bindings.json": {
             "interface_bindings": candidate_config["config"]["acl"]["interface_bindings"],
+        },
+        "security/nacm.json": {
+            "nacm": candidate_config["config"]["nacm"],
         },
     }
     if include_observed_state:
@@ -658,6 +704,35 @@ def build_managed_tnsr_config_from_payload(payload: dict[str, Any]) -> dict[str,
         prometheus_exporter=PrometheusExporterSnapshot(
             host_space_filter=payload.get("prometheus_exporter", {}).get("host_space_filter"),
         ),
+        nacm=NACMSnapshot(
+            enabled=payload.get("nacm", {}).get("enabled"),
+            read_default=payload.get("nacm", {}).get("read_default"),
+            write_default=payload.get("nacm", {}).get("write_default"),
+            exec_default=payload.get("nacm", {}).get("exec_default"),
+            groups=[
+                NACMGroupRecord(
+                    name=item["name"],
+                    user_names=list(item.get("user_names", [])),
+                )
+                for item in payload.get("nacm", {}).get("groups", [])
+            ],
+            rule_lists=[
+                NACMRuleListRecord(
+                    name=item["name"],
+                    group=item.get("group"),
+                    rules=[
+                        NACMRuleRecord(
+                            name=rule["name"],
+                            module_name=rule.get("module_name"),
+                            access_operations=rule.get("access_operations"),
+                            action=rule.get("action"),
+                        )
+                        for rule in item.get("rules", [])
+                    ],
+                )
+                for item in payload.get("nacm", {}).get("rule_lists", [])
+            ],
+        ),
         raw_sections=dict(payload.get("raw_sections", {})),
     )
     return build_managed_tnsr_config(snapshot)
@@ -673,6 +748,7 @@ def _proposal_summary(existing: dict[str, Any] | None, candidate: dict[str, Any]
     current_bfd_sessions = len(existing.get("config", {}).get("bfd", {}).get("sessions", [])) if existing else 0
     current_nat_rulesets = len(existing.get("config", {}).get("nat", {}).get("rulesets", [])) if existing else 0
     current_acl_rulesets = len(existing.get("config", {}).get("acl", {}).get("rulesets", [])) if existing else 0
+    current_nacm_rule_lists = len(existing.get("config", {}).get("nacm", {}).get("rule_lists", [])) if existing else 0
     current_sysctl = len(existing.get("config", {}).get("platform", {}).get("sysctl", [])) if existing else 0
     current_kernel_modules = len(existing.get("config", {}).get("platform", {}).get("system", {}).get("kernel_modules", [])) if existing else 0
     current_logging_servers = len(existing.get("config", {}).get("management", {}).get("logging", {}).get("remote_servers", [])) if existing else 0
@@ -686,6 +762,7 @@ def _proposal_summary(existing: dict[str, Any] | None, candidate: dict[str, Any]
     candidate_bfd_sessions = len(candidate["config"]["bfd"]["sessions"])
     candidate_nat_rulesets = len(candidate["config"]["nat"]["rulesets"])
     candidate_acl_rulesets = len(candidate["config"]["acl"]["rulesets"])
+    candidate_nacm_rule_lists = len(candidate["config"]["nacm"]["rule_lists"])
     candidate_sysctl = len(candidate["config"]["platform"]["sysctl"])
     candidate_kernel_modules = len(candidate["config"]["platform"]["system"]["kernel_modules"])
     candidate_logging_servers = len(candidate["config"]["management"]["logging"]["remote_servers"])
@@ -701,6 +778,7 @@ def _proposal_summary(existing: dict[str, Any] | None, candidate: dict[str, Any]
         f"BFD sessions: {current_bfd_sessions} -> {candidate_bfd_sessions}",
         f"NAT rulesets: {current_nat_rulesets} -> {candidate_nat_rulesets}",
         f"ACL rulesets: {current_acl_rulesets} -> {candidate_acl_rulesets}",
+        f"NACM rule lists: {current_nacm_rule_lists} -> {candidate_nacm_rule_lists}",
         f"Sysctl settings: {current_sysctl} -> {candidate_sysctl}",
         f"Kernel modules: {current_kernel_modules} -> {candidate_kernel_modules}",
         f"Logging servers: {current_logging_servers} -> {candidate_logging_servers}",

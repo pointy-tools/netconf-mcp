@@ -102,6 +102,28 @@ class FakeClient:
                         }
                     }
                 },
+                "nacm": {
+                    "enable-nacm": "true",
+                    "read-default": "deny",
+                    "write-default": "deny",
+                    "exec-default": "deny",
+                    "groups": {
+                        "group": {
+                            "name": "admin",
+                            "user-name": ["ansible", "root", "tnsr"],
+                        }
+                    },
+                    "rule-list": {
+                        "name": "admin-rules",
+                        "group": "admin",
+                        "rule": {
+                            "name": "permit-all",
+                            "module-name": "*",
+                            "access-operations": "*",
+                            "action": "permit",
+                        },
+                    },
+                },
                 "interfaces-config": {
                     "interface": [
                         {
@@ -308,3 +330,8 @@ def test_tnsr_collector_normalizes_interfaces_routes_and_bgp():
     assert payload["logging"]["remote_servers"][0]["name"] == "localhost"
     assert payload["logging"]["remote_servers"][0]["port"] == 10010
     assert payload["prometheus_exporter"]["host_space_filter"] == "v2 ^/sys/heartbeat ^/interfaces/"
+    assert payload["nacm"]["enabled"] is True
+    assert payload["nacm"]["groups"][0]["name"] == "admin"
+    assert payload["nacm"]["groups"][0]["user_names"] == ["ansible", "root", "tnsr"]
+    assert payload["nacm"]["rule_lists"][0]["name"] == "admin-rules"
+    assert payload["nacm"]["rule_lists"][0]["rules"][0]["action"] == "permit"
