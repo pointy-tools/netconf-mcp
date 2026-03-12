@@ -133,6 +133,32 @@ The snapshot currently normalizes:
 - NAT rulesets from `vpf-config`
 - VPF filter-rulesets and interface policy bindings
 
+## TNSR domain views
+
+Use the domain-view helper when you want a smaller, agent-friendly summary instead of a full normalized snapshot:
+
+```bash
+python scripts/tnsr_show.py \
+  --inventory lab-inventory.json \
+  --target-ref target://lab/tnsr \
+  --hostkey-policy accept-new \
+  --domain prefix-lists
+```
+
+Supported domains currently include:
+
+- `interfaces`
+- `routing`
+- `bgp`
+- `prefix-lists`
+- `route-maps`
+- `bfd`
+- `nat`
+- `filters`
+- `nacm`
+- `management`
+- `platform`
+
 ## Snapshot-to-code proposal flow
 
 Use the proposal generator when you want a safe repo-facing candidate change instead of touching the device:
