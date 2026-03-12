@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import json
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -555,11 +556,22 @@ class NetconfMCPServer:
         arguments = arguments or {}
         request = self._envelope_request(tool_name, arguments)
         args = request["arguments"]
+        validation_error = self._validate_datastore_arguments(args)
+        if validation_error:
+            return self._error(
+                request["operation_id"],
+                tool_name,
+                request["target_ref"],
+                validation_error,
+                session_ref=request["session_ref"],
+            )
+
+        xpath = args.get("xpath") or args.get("xpath_filter")
         try:
             status, payload = self.engine.datastore_get(
                 request["session_ref"],
                 datastore=args.get("datastore", "running"),
-                xpath=args.get("xpath"),
+                xpath=xpath,
                 subtree=args.get("subtree"),
                 with_defaults=args.get("with_defaults", "explicit"),
                 module_filter=args.get("module_filter"),
@@ -587,6 +599,7 @@ class NetconfMCPServer:
                 payload,
                 session_ref=request["session_ref"],
             )
+        payload = self._guard_datastore_payload(payload)
 
         if args.get("filter"):
             self._audit_event(request["operation_id"], request["tool"], request["target_ref"], {
@@ -682,6 +695,69 @@ class NetconfMCPServer:
 
     def get_audit_log(self):
         return list(getattr(self, "_audit_log", []))
+
+    @staticmethod
+    def _validate_datastore_arguments(args: dict[str, Any]) -> dict[str, Any] | None:
+        xpath = args.get("xpath")
+        xpath_filter = args.get("xpath_filter")
+        subtree = args.get("subtree")
+        provided = [
+            name
+            for name, value in (
+                ("xpath", xpath),
+                ("xpath_filter", xpath_filter),
+                ("subtree", subtree),
+            )
+            if value not in (None, "")
+        ]
+        if xpath and xpath_filter and xpath != xpath_filter:
+            return {
+                "status": "error",
+                "error_category": "protocol",
+                "error_type": "BAD_INPUT",
+                "error_code": "FILTER_CONFLICT",
+                "error_tag": "invalid-value",
+                "error_message": "Provide only one filter path, not both xpath and xpath_filter with different values",
+                "suggested_next_steps": ["Use xpath or xpath_filter with the same value", "Remove the conflicting filter argument"],
+            }
+        if len(provided) > 1 and not (len(provided) == 2 and set(provided) == {"xpath", "xpath_filter"} and xpath == xpath_filter):
+            return {
+                "status": "error",
+                "error_category": "protocol",
+                "error_type": "BAD_INPUT",
+                "error_code": "FILTER_CONFLICT",
+                "error_tag": "invalid-value",
+                "error_message": "Provide only one filter type per datastore read",
+                "suggested_next_steps": ["Choose either xpath/xpath_filter or subtree", "Retry with a single filter argument"],
+            }
+        return None
+
+    @staticmethod
+    def _guard_datastore_payload(payload: dict[str, Any]) -> dict[str, Any]:
+        raw_xml = payload.get("raw_xml")
+        value = payload.get("value")
+        approx_size = 0
+        if raw_xml:
+            approx_size += len(raw_xml)
+        try:
+            approx_size += len(json.dumps(value, sort_keys=True))
+        except Exception:
+            pass
+
+        if approx_size < 12000:
+            return dict(payload)
+
+        source_metadata = dict(payload.get("source_metadata") or {})
+        source_metadata["response_truncated"] = True
+        guarded = dict(payload)
+        guarded["source_metadata"] = source_metadata
+        guarded["response_summary"] = {
+            "approx_chars": approx_size,
+            "reason": "large_datastore_read",
+            "hint": "Retry with a more precise xpath filter or a vendor-specific read flow",
+        }
+        guarded.pop("raw_xml", None)
+        return guarded
 
     def get_server(self):
         return self.server

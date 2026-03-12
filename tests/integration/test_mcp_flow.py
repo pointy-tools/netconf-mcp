@@ -53,6 +53,8 @@ class DummyLiveClient:
         del target, session, subtree, with_defaults
         if xpath == "/interfaces/interface[name='eth0']/enabled":
             value = "true"
+        elif xpath == "/large":
+            value = {"payload": "x" * 16000}
         else:
             value = {"interfaces": {"interface": {"name": "eth0", "enabled": "true"}}}
         return {
@@ -461,3 +463,73 @@ def test_live_read_only_target_can_be_probed_with_dummy_client(tmp_path: Path):
     )
     assert plan["status"] == "error"
     assert plan["error"]["error_code"] == "LIVE_WRITE_UNSUPPORTED"
+
+
+def test_datastore_get_config_accepts_xpath_filter_alias_for_live_reads(tmp_path: Path):
+    inventory_path = _write_live_inventory(tmp_path)
+    runtime = create_server(FIXTURES, inventory_path=inventory_path, live_client=DummyLiveClient())
+    tool = runtime.get_server()
+
+    opened = tool._tools["netconf.open_session"]({"target_ref": "target://lab/tnsr"})
+    session_ref = opened["data"]["session_ref"]
+
+    config = tool._tools["datastore.get_config"](
+        {
+            "session_ref": session_ref,
+            "arguments": {
+                "datastore": "running",
+                "xpath_filter": "/interfaces/interface[name='eth0']/enabled",
+            },
+        }
+    )
+
+    assert config["status"] == "ok"
+    assert config["data"]["resource"]["filter"] == "/interfaces/interface[name='eth0']/enabled"
+    assert config["data"]["value"] == "true"
+
+
+def test_datastore_get_config_rejects_conflicting_filter_arguments(tmp_path: Path):
+    inventory_path = _write_live_inventory(tmp_path)
+    runtime = create_server(FIXTURES, inventory_path=inventory_path, live_client=DummyLiveClient())
+    tool = runtime.get_server()
+
+    opened = tool._tools["netconf.open_session"]({"target_ref": "target://lab/tnsr"})
+    session_ref = opened["data"]["session_ref"]
+
+    config = tool._tools["datastore.get_config"](
+        {
+            "session_ref": session_ref,
+            "arguments": {
+                "datastore": "running",
+                "xpath": "/interfaces/interface[name='eth0']/enabled",
+                "xpath_filter": "/different/path",
+            },
+        }
+    )
+
+    assert config["status"] == "error"
+    assert config["error"]["error_code"] == "FILTER_CONFLICT"
+
+
+def test_datastore_get_config_trims_large_live_payloads(tmp_path: Path):
+    inventory_path = _write_live_inventory(tmp_path)
+    runtime = create_server(FIXTURES, inventory_path=inventory_path, live_client=DummyLiveClient())
+    tool = runtime.get_server()
+
+    opened = tool._tools["netconf.open_session"]({"target_ref": "target://lab/tnsr"})
+    session_ref = opened["data"]["session_ref"]
+
+    config = tool._tools["datastore.get_config"](
+        {
+            "session_ref": session_ref,
+            "arguments": {
+                "datastore": "running",
+                "xpath_filter": "/large",
+            },
+        }
+    )
+
+    assert config["status"] == "ok"
+    assert config["data"]["source_metadata"]["response_truncated"] is True
+    assert "raw_xml" not in config["data"]
+    assert config["data"]["response_summary"]["reason"] == "large_datastore_read"
