@@ -51,10 +51,99 @@ class DummyLiveClient:
 
     def datastore_get(self, target, session, *, datastore="running", xpath=None, subtree=None, with_defaults="explicit", strict_config=False):
         del target, session, subtree, with_defaults
-        if xpath == "/interfaces/interface[name='eth0']/enabled":
+        if xpath is None:
+            value = {
+                "host-if-config": {
+                    "interface": {
+                        "name": "eth0",
+                        "enabled": "true",
+                        "ipv4": {"dhcp-client": {"enabled": "true"}},
+                        "ipv6": {"dhcp-client": {"enabled": "true"}},
+                    }
+                },
+                "interfaces-config": {
+                    "interface": [
+                        {"name": "LAN", "enabled": "true", "ipv4": {"address": {"ip": "10.0.0.1/24"}}},
+                        {"name": "WAN", "enabled": "true", "ipv4": {"address": {"ip": "192.0.2.1/31"}}},
+                    ]
+                },
+                "route-table-config": {
+                    "static-routes": {
+                        "route-table": {
+                            "name": "default",
+                            "ipv4-routes": {
+                                "route": {
+                                    "destination-prefix": "0.0.0.0/0",
+                                    "next-hop": {"hop": {"ipv4-address": "192.0.2.0", "if-name": "WAN"}},
+                                }
+                            },
+                        }
+                    }
+                },
+                "route-config": {
+                    "dynamic": {
+                        "bgp": {
+                            "routers": {
+                                "router": {
+                                    "asn": "65001",
+                                    "router-id": "10.0.0.1",
+                                    "neighbors": {"neighbor": {"peer": "192.0.2.2", "peer-group-name": "TRANSIT"}},
+                                }
+                            }
+                        },
+                        "prefix-lists": {
+                            "list": {
+                                "name": "DEFAULT-OUT",
+                                "rules": {"rule": {"sequence": "10", "action": "permit", "prefix": "0.0.0.0/0"}},
+                            }
+                        },
+                    }
+                },
+                "nacm": {
+                    "enable-nacm": "true",
+                    "read-default": "deny",
+                    "write-default": "deny",
+                    "exec-default": "deny",
+                    "groups": {"group": {"name": "admin", "user-name": ["ansible", "tnsr"]}},
+                    "rule-list": {"name": "admin-rules", "group": "admin", "rule": {"name": "permit-all", "action": "permit"}},
+                },
+                "ssh-server-config": {"host": {"netconf-subsystem": {"enable": "true", "port": "830"}}},
+                "logging-config": {"remote-servers": {"remote-server": {"name": "localhost", "address": "127.0.0.1", "port": "10010"}}},
+                "prometheus-exporter": {"host-space": {"filters": {"filter": "v2 ^/sys/heartbeat"}}},
+                "dataplane-config": {"cpu": {"workers": "6"}, "dpdk": {"dev": [{"name": "WAN"}]}},
+                "sysctl-config": {"kernel": {"shmmax": "2147483648"}},
+                "system": {"kernel": {"modules": {"vfio": {"noiommu": "true"}}}},
+                "bfd-config": {"bfd-table": {"bfd-session": {"name": "transit-bfd", "enable": "true"}}},
+                "vpf-config": {
+                    "nat-rulesets": {"ruleset": {"name": "WAN-nat", "rules": {"rule": {"sequence": "1000"}}}},
+                    "filter-rulesets": {"ruleset": {"name": "WAN-filter", "rules": {"rule": {"sequence": "10"}}}},
+                    "options": {"interfaces": {"interface": {"if-name": "WAN", "nat-ruleset": "WAN-nat", "filter-ruleset": "WAN-filter"}}},
+                },
+            }
+        elif xpath == "/interfaces/interface[name='eth0']/enabled":
             value = "true"
         elif xpath == "/large":
             value = {"payload": "x" * 16000}
+        elif xpath == "/route-config":
+            value = {
+                "dynamic": {
+                    "bgp": {
+                        "routers": {
+                            "router": {
+                                "asn": "65001",
+                                "router-id": "10.0.0.1",
+                                "neighbors": {"neighbor": {"peer": "192.0.2.2", "peer-group-name": "TRANSIT"}},
+                            }
+                        }
+                    },
+                    "prefix-lists": {
+                        "list": {
+                            "name": "DEFAULT-OUT",
+                            "rules": {"rule": {"sequence": "10", "action": "permit", "prefix": "0.0.0.0/0"}},
+                        }
+                    },
+                }
+            }
         else:
             value = {"interfaces": {"interface": {"name": "eth0", "enabled": "true"}}}
         return {
@@ -107,6 +196,7 @@ def test_read_only_manifest_exposed_and_only_read_only_names():
         "netconf.get_monitoring",
         "datastore.get",
         "datastore.get_config",
+        "tnsr.get_domain_view",
         "config.plan_edit",
         "config.validate_plan",
         "config.apply_plan",
@@ -534,3 +624,49 @@ def test_datastore_get_config_trims_large_live_payloads(tmp_path: Path):
     assert config["data"]["source_metadata"]["response_truncated"] is True
     assert "raw_xml" not in config["data"]
     assert config["data"]["response_summary"]["reason"] == "large_datastore_read"
+
+
+def test_tnsr_domain_view_returns_compact_prefix_list_view_for_live_session(tmp_path: Path):
+    inventory_path = _write_live_inventory(tmp_path)
+    runtime = create_server(FIXTURES, inventory_path=inventory_path, live_client=DummyLiveClient())
+    tool = runtime.get_server()
+
+    opened = tool._tools["netconf.open_session"]({"target_ref": "target://lab/tnsr"})
+    session_ref = opened["data"]["session_ref"]
+
+    view = tool._tools["tnsr.get_domain_view"](
+        {
+            "session_ref": session_ref,
+            "arguments": {
+                "domain": "prefix-lists",
+            },
+        }
+    )
+
+    assert view["status"] == "ok"
+    assert view["data"]["domain"] == "prefix-lists"
+    assert view["data"]["view"]["summary"]["prefix_list_count"] == 1
+    assert view["data"]["view"]["prefix_lists"][0]["name"] == "DEFAULT-OUT"
+
+
+def test_tnsr_domain_view_rejects_non_tnsr_sessions():
+    runtime = create_server(FIXTURES)
+    tool = runtime.get_server()
+
+    opened = tool._tools["netconf.open_session"](
+        {
+            "target_ref": "target://lab/strict",
+            "arguments": {"credential_ref": "cred://vault/lab/strict"},
+        }
+    )
+    session_ref = opened["data"]["session_ref"]
+
+    view = tool._tools["tnsr.get_domain_view"](
+        {
+            "session_ref": session_ref,
+            "arguments": {"domain": "prefix-lists"},
+        }
+    )
+
+    assert view["status"] == "error"
+    assert view["error"]["error_code"] == "UNSUPPORTED_TARGET"

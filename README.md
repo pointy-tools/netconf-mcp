@@ -24,6 +24,7 @@ Read and discovery:
 - `netconf.get_monitoring`
 - `datastore.get`
 - `datastore.get_config`
+- `tnsr.get_domain_view`
 
 Guarded write workflow:
 

@@ -99,6 +99,30 @@ The smoke runner always executes:
 6. profile-selected `datastore.get_config` probes
 7. optional `datastore.get`
 
+## MCP TNSR domain tool
+
+For agent workflows, prefer the dedicated TNSR MCP domain tool over large raw datastore reads when the question is about a known TNSR config domain.
+
+Current domain choices:
+
+- `interfaces`
+- `routing`
+- `bgp`
+- `prefix-lists`
+- `route-maps`
+- `bfd`
+- `nat`
+- `filters`
+- `nacm`
+- `management`
+- `platform`
+
+The MCP tool name is:
+
+- `tnsr.get_domain_view`
+
+Use it after `netconf.open_session`, passing the existing `session_ref` plus a `domain`.
+
 ## Normalized TNSR snapshot
 
 Use the snapshot collector when you want a stable JSON artifact to diff against code-managed configuration:

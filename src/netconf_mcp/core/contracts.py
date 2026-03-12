@@ -30,6 +30,7 @@ READ_ONLY_TOOLSET = [
     "netconf.get_monitoring",
     "datastore.get",
     "datastore.get_config",
+    "tnsr.get_domain_view",
 ]
 
 GUARDED_WRITE_TOOLSET = [

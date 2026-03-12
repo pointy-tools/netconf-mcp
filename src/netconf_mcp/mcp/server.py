@@ -18,6 +18,8 @@ from netconf_mcp.core.contracts import (
 )
 from netconf_mcp.protocol.engine import NetconfReadEngine
 from netconf_mcp.utils.redact import redact_mapping
+from netconf_mcp.vendors.tnsr import TNSRCollector
+from netconf_mcp.vendors.tnsr_views import DOMAIN_CHOICES, build_tnsr_domain_view
 
 try:
     from mcp.server.fastmcp import FastMCP
@@ -215,6 +217,75 @@ class NetconfMCPServer:
             the raw payload explicitly proves it. If the response is large or truncated, say so before drawing conclusions.
             """
             return self._datastore_read("datastore.get_config", arguments, strict_config=True)
+
+        @self.server.tool("tnsr.get_domain_view")
+        def _tnsr_get_domain_view(arguments: dict[str, Any] | None = None):
+            """Return a compact TNSR-specific domain view for agent use.
+
+            Use this instead of broad datastore reads when asking about prefix-lists, route-maps, BGP, NACM,
+            management, or platform settings on TNSR. Values in the returned domain payload should be quoted verbatim.
+            """
+            arguments = arguments or {}
+            request = self._envelope_request("tnsr.get_domain_view", arguments)
+            args = request["arguments"]
+            domain = args.get("domain")
+            if domain not in DOMAIN_CHOICES:
+                return self._error(
+                    request["operation_id"],
+                    "tnsr.get_domain_view",
+                    request["target_ref"],
+                    {
+                        "status": "error",
+                        "error_category": "schema",
+                        "error_code": "BAD_DOMAIN",
+                        "error_type": "BAD_DOMAIN",
+                        "error_tag": "invalid-value",
+                        "error_message": f"Unsupported TNSR domain: {domain}",
+                    },
+                    session_ref=request["session_ref"],
+                )
+            try:
+                payload = self._tnsr_domain_view_payload(
+                    session_ref=request["session_ref"],
+                    domain=domain,
+                    hostkey_policy=args.get("hostkey_policy", "strict"),
+                )
+            except KeyError:
+                return self._error(
+                    request["operation_id"],
+                    "tnsr.get_domain_view",
+                    request["target_ref"],
+                    {
+                        "status": "error",
+                        "error_category": "transport",
+                        "error_code": "SESSION_UNKNOWN",
+                        "error_type": "SESSION_UNKNOWN",
+                        "error_message": "Unknown session reference",
+                    },
+                    session_ref=request["session_ref"],
+                )
+            except ValueError as exc:
+                return self._error(
+                    request["operation_id"],
+                    "tnsr.get_domain_view",
+                    request["target_ref"],
+                    {
+                        "status": "error",
+                        "error_category": "schema",
+                        "error_code": "UNSUPPORTED_TARGET",
+                        "error_type": "UNSUPPORTED_TARGET",
+                        "error_tag": "operation-not-supported",
+                        "error_message": str(exc),
+                    },
+                    session_ref=request["session_ref"],
+                )
+            return self._ok(
+                request["operation_id"],
+                "tnsr.get_domain_view",
+                request["target_ref"],
+                payload,
+                session_ref=request["session_ref"],
+            )
 
         @self.server.tool("config.plan_edit")
         def _plan_edit(arguments: dict[str, Any] | None = None):
@@ -721,6 +792,39 @@ class NetconfMCPServer:
 
     def get_audit_log(self):
         return list(getattr(self, "_audit_log", []))
+
+    def _tnsr_domain_view_payload(
+        self,
+        *,
+        session_ref: str | None,
+        domain: str,
+        hostkey_policy: str,
+    ) -> dict[str, Any]:
+        if not session_ref:
+            raise ValueError("TNSR domain views require an open session")
+
+        session = self.engine._require_session(session_ref)
+        target = self.engine._target_by_ref(session.target_ref)
+        facts = target.get("facts", {})
+        if facts.get("os") != "tnsr":
+            raise ValueError("TNSR domain views are only available for TNSR targets")
+
+        if session.backend == "live-ssh":
+            snapshot = TNSRCollector(client=self.engine.live_client).collect(target, hostkey_policy=hostkey_policy).to_dict()
+        else:
+            raise ValueError("TNSR domain views are not implemented for fixture-backed non-TNSR profiles")
+
+        return {
+            "vendor": "netgate",
+            "os": "tnsr",
+            "target_ref": session.target_ref,
+            "domain": domain,
+            "view": build_tnsr_domain_view(snapshot, domain),
+            "source_metadata": {
+                "mode": session.backend,
+                "target_name": session.target_name,
+            },
+        }
 
     @staticmethod
     def _validate_datastore_arguments(args: dict[str, Any]) -> dict[str, Any] | None:
