@@ -124,6 +124,7 @@ def test_read_only_manifest_exposed_and_only_read_only_names():
         "discover-device-safely",
         "inspect-operational-state",
         "review-yang-capabilities",
+        "netconf-data-fidelity",
     }
 
 

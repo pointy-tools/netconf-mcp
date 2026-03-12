@@ -76,6 +76,7 @@ class NetconfMCPServer:
     def _register_handlers(self) -> None:
         @self.server.tool("inventory.list_targets")
         def _inventory_list_targets(arguments: dict[str, Any] | None = None):
+            """List available targets and basic facts without inferring anything beyond returned fields."""
             arguments = arguments or {}
             request = self._envelope_request("inventory.list_targets", arguments)
             payload = self.engine.list_targets(
@@ -91,6 +92,7 @@ class NetconfMCPServer:
 
         @self.server.tool("netconf.open_session")
         def _open_session(arguments: dict[str, Any] | None = None):
+            """Open a NETCONF session for a target before issuing reads or guarded workflow operations."""
             arguments = arguments or {}
             request = self._envelope_request("netconf.open_session", arguments)
             args = request["arguments"]
@@ -117,6 +119,7 @@ class NetconfMCPServer:
 
         @self.server.tool("netconf.discover_capabilities")
         def _discover_capabilities(arguments: dict[str, Any] | None = None):
+            """Return advertised NETCONF capabilities; callers should quote capability strings verbatim."""
             arguments = arguments or {}
             request = self._envelope_request("netconf.discover_capabilities", arguments)
             status, payload = self.engine.discover_capabilities(request["session_ref"])
@@ -138,6 +141,7 @@ class NetconfMCPServer:
 
         @self.server.tool("yang.get_library")
         def _get_library(arguments: dict[str, Any] | None = None):
+            """Return YANG library/module inventory; callers should report module names and revisions exactly as returned."""
             arguments = arguments or {}
             request = self._envelope_request("yang.get_library", arguments)
             status, payload = self.engine.get_library(request["session_ref"])
@@ -168,6 +172,7 @@ class NetconfMCPServer:
 
         @self.server.tool("netconf.get_monitoring")
         def _monitoring(arguments: dict[str, Any] | None = None):
+            """Return NETCONF monitoring data; summarize conservatively and preserve returned identifiers verbatim."""
             arguments = arguments or {}
             request = self._envelope_request("netconf.get_monitoring", arguments)
             args = request["arguments"]
@@ -193,10 +198,22 @@ class NetconfMCPServer:
 
         @self.server.tool("datastore.get")
         def _get_datastore(arguments: dict[str, Any] | None = None):
+            """Read structured operational or mixed datastore data.
+
+            Treat returned values as authoritative structured output. Quote values verbatim when summarizing.
+            Do not collapse, deduplicate, normalize, or infer equivalence between similar-looking entries unless
+            the raw payload explicitly proves it.
+            """
             return self._datastore_read("datastore.get", arguments, strict_config=False)
 
         @self.server.tool("datastore.get_config")
         def _get_config(arguments: dict[str, Any] | None = None):
+            """Read structured configuration data from a datastore.
+
+            Treat returned values as authoritative structured output. Quote values verbatim when summarizing.
+            Do not collapse, deduplicate, normalize, or infer equivalence between similar-looking entries unless
+            the raw payload explicitly proves it. If the response is large or truncated, say so before drawing conclusions.
+            """
             return self._datastore_read("datastore.get_config", arguments, strict_config=True)
 
         @self.server.tool("config.plan_edit")
@@ -544,6 +561,15 @@ class NetconfMCPServer:
             return (
                 f"Review yang capabilities for {target_ref}. gap_tolerance={gap_tolerance}. "
                 "Prefer evidence-backed interpretation only."
+            )
+
+        @self.server.prompt("netconf-data-fidelity")
+        def _prompt_data_fidelity(target_ref: str, session_ref: str, scope: str = "structured-data") -> str:
+            return (
+                f"Review returned NETCONF data for {target_ref}. scope={scope}. "
+                "Treat the payload as authoritative structured output. Quote values verbatim, avoid paraphrasing or "
+                "deduplicating similar-looking entries, and explicitly mention if data is partial, truncated, or "
+                "based on a narrowed filter."
             )
 
     def _datastore_read(

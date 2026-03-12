@@ -90,3 +90,12 @@ What is still intentionally deferred:
 ## Notes
 
 This repository also contains workflow-generated planning artifacts under ignored local workflow paths. The repo root README is intentionally focused on the implemented project rather than the internal planning prompt that produced it.
+
+## Data Fidelity
+
+When an agent summarizes structured data returned from NETCONF tools:
+
+- quote returned values verbatim
+- avoid paraphrasing, deduplicating, or treating similar-looking entries as equivalent unless the payload proves it
+- say explicitly when data is filtered, partial, or truncated
+- prefer direct citation of returned fields over narrative interpretation

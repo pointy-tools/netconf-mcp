@@ -52,4 +52,5 @@ READ_ONLY_PROMPTS = [
     "discover-device-safely",
     "inspect-operational-state",
     "review-yang-capabilities",
+    "netconf-data-fidelity",
 ]
