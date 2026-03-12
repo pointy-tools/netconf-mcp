@@ -224,6 +224,8 @@ class NetconfMCPServer:
 
             Use this instead of broad datastore reads when asking about prefix-lists, route-maps, BGP, NACM,
             management, or platform settings on TNSR. Values in the returned domain payload should be quoted verbatim.
+            Treat returned fields as configuration state unless the payload explicitly says otherwise; do not present
+            configured settings as operational behavior without an explicit supporting signal.
             """
             arguments = arguments or {}
             request = self._envelope_request("tnsr.get_domain_view", arguments)

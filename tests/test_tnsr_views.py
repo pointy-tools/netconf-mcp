@@ -16,7 +16,22 @@ def _sample_snapshot() -> dict:
         "bgp": {
             "asn": "65001",
             "router_id": "10.0.0.1",
-            "neighbors": [{"peer": "192.0.2.2", "peer_group": "TRANSIT", "route_map_in": "TRANSIT-IN", "route_map_out": "TRANSIT-OUT"}],
+            "neighbors": [
+                {
+                    "peer": "TRANSIT",
+                    "peer_group": "TRANSIT",
+                    "bfd": True,
+                    "ebgp_multihop_max_hops": 6,
+                    "route_map_in": "TRANSIT-IN",
+                    "route_map_out": "TRANSIT-OUT",
+                },
+                {
+                    "peer": "192.0.2.2",
+                    "peer_group": "TRANSIT",
+                    "route_map_in": "TRANSIT-IN",
+                    "route_map_out": "TRANSIT-OUT",
+                },
+            ],
         },
         "prefix_lists": [
             {"name": "AWS-PUBLIC-ANNOUNCE", "rules": [{"sequence": "1", "action": "permit", "prefix": "16.15.176.0/20"}]},
@@ -77,9 +92,14 @@ def test_nacm_view_summarizes_groups_and_rule_lists():
 def test_bgp_view_summarizes_policy_attachments():
     view = build_tnsr_domain_view(_sample_snapshot(), "bgp")
 
-    assert view["summary"]["neighbor_count"] == 1
-    assert view["summary"]["route_map_in_neighbors"] == ["192.0.2.2"]
-    assert view["summary"]["route_map_out_neighbors"] == ["192.0.2.2"]
+    assert view["summary"]["neighbor_count"] == 2
+    assert view["summary"]["peer_group_template_count"] == 1
+    assert view["summary"]["peer_member_count"] == 1
+    assert view["summary"]["route_map_in_neighbors"] == ["192.0.2.2", "TRANSIT"]
+    assert view["summary"]["route_map_out_neighbors"] == ["192.0.2.2", "TRANSIT"]
+    assert view["summary"]["configured_bfd_peer_groups"] == ["TRANSIT"]
+    assert view["peer_group_members"]["TRANSIT"] == ["192.0.2.2"]
+    assert view["analysis_warnings"][0]["code"] == "TNSR_MULTIHOP_BFD_CONFIGURED"
 
 
 def test_nat_and_filter_views_summarize_interfaces_and_protocol_sets():

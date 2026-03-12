@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 from typing import Any
 
 
@@ -46,6 +47,16 @@ def build_tnsr_domain_view(snapshot: dict[str, Any], domain: str) -> dict[str, A
     raise ValueError(f"Unsupported TNSR domain: {domain}")
 
 
+def _is_ip_address_like(value: str | None) -> bool:
+    if not value:
+        return False
+    try:
+        ipaddress.ip_address(value)
+        return True
+    except ValueError:
+        return False
+
+
 def _interfaces_view(snapshot: dict[str, Any]) -> dict[str, Any]:
     interfaces = list(snapshot.get("interfaces", []))
     host_interfaces = list(snapshot.get("host_interfaces", []))
@@ -75,21 +86,62 @@ def _routing_view(snapshot: dict[str, Any]) -> dict[str, Any]:
 def _bgp_view(snapshot: dict[str, Any]) -> dict[str, Any]:
     bgp = dict(snapshot.get("bgp", {}))
     neighbors = list(bgp.get("neighbors", []))
+    peer_group_templates = [item for item in neighbors if not _is_ip_address_like(item.get("peer"))]
+    peer_members = [item for item in neighbors if _is_ip_address_like(item.get("peer"))]
+    peer_group_members: dict[str, list[str]] = {}
+    for item in peer_members:
+        group_name = item.get("peer_group")
+        if group_name:
+            peer_group_members.setdefault(group_name, []).append(item.get("peer"))
+
+    warnings = []
+    for item in peer_group_templates:
+        if item.get("bfd") is True and (item.get("ebgp_multihop_max_hops") or 0) > 1:
+            warnings.append(
+                {
+                    "code": "TNSR_MULTIHOP_BFD_CONFIGURED",
+                    "peer_group": item.get("peer"),
+                    "message": "BFD is configured on a multihop peer-group; verify operational support before treating it as effective on TNSR.",
+                }
+            )
     return {
         "domain": "bgp",
         "summary": {
             "asn": bgp.get("asn"),
             "router_id": bgp.get("router_id"),
             "neighbor_count": len(neighbors),
-            "peer_groups": sorted({item.get("peer_group") for item in neighbors if item.get("peer_group")}),
+            "peer_groups": sorted(
+                {
+                    item.get("peer")
+                    for item in peer_group_templates
+                    if item.get("peer")
+                }
+                | {
+                    item.get("peer_group")
+                    for item in peer_members
+                    if item.get("peer_group")
+                }
+            ),
+            "peer_group_template_count": len(peer_group_templates),
+            "peer_member_count": len(peer_members),
             "route_map_in_neighbors": sorted(
                 item.get("peer") for item in neighbors if item.get("route_map_in")
             ),
             "route_map_out_neighbors": sorted(
                 item.get("peer") for item in neighbors if item.get("route_map_out")
             ),
+            "configured_bfd_peer_groups": sorted(
+                item.get("peer") for item in peer_group_templates if item.get("bfd") is True and item.get("peer")
+            ),
+            "configured_bfd_peer_members": sorted(
+                item.get("peer") for item in peer_members if item.get("bfd") is True and item.get("peer")
+            ),
         },
         "bgp": bgp,
+        "peer_group_templates": peer_group_templates,
+        "peer_members": peer_members,
+        "peer_group_members": {key: sorted(value) for key, value in sorted(peer_group_members.items())},
+        "analysis_warnings": warnings,
     }
 
 
