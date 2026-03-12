@@ -1,0 +1,28 @@
+{
+  "targets": [
+    {
+      "target_ref": "target://lab/tnsr",
+      "name": "tnsr-lab",
+      "site": "use1-az2",
+      "role": [
+        "edge"
+      ],
+      "status": "online",
+      "safety_state": "ready",
+      "transport_mode": "live-ssh",
+      "transport": {
+        "protocol": "ssh",
+        "framing": "base:1.0"
+      },
+      "host": "use1-az2.magnat.iad.magnite-core-dev.com",
+      "port": 830,
+      "username": "tnsr",
+      "facts": {
+        "vendor": "netgate",
+        "os": "tnsr"
+      },
+      "safety_profile": "read-only",
+      "last_seen_utc": "2026-03-12T00:00:00Z"
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-"""Simulation-first NETCONF read-only engine."""
+"""Simulation-first NETCONF read-only engine with optional live read-only probing."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from netconf_mcp.core.contracts import READ_ONLY_TOOLSET
 from netconf_mcp.utils import filters
 from netconf_mcp.utils.filters import xpath_filter
 from netconf_mcp.transport.fixtures import FixtureRepository
+from netconf_mcp.transport.live import LiveNetconfError, LiveNetconfSSHClient
 
 
 @dataclass
@@ -20,6 +21,7 @@ class Session:
     target_ref: str
     target_name: str
     profile: str
+    backend: str
     framing: str
     capabilities: list[str]
     opened_at: str
@@ -28,9 +30,10 @@ class Session:
 class NetconfReadEngine:
     """A strict read-only, fixture-backed protocol simulator."""
 
-    def __init__(self, fixture_root: Path):
+    def __init__(self, fixture_root: Path, *, inventory_path: Path | None = None, live_client: LiveNetconfSSHClient | None = None):
         self.fixture_root = Path(fixture_root)
-        self.repository = FixtureRepository(self.fixture_root)
+        self.repository = FixtureRepository(self.fixture_root, inventory_path=inventory_path)
+        self.live_client = live_client or LiveNetconfSSHClient()
         self.sessions: dict[str, Session] = {}
         self.plans: dict[str, dict[str, Any]] = {}
         self.pending_rollbacks: dict[str, dict[str, Any]] = {}
@@ -86,8 +89,45 @@ class NetconfReadEngine:
         connect_timeout_ms: int | None = None,
         operation_id: str | None = None,
     ) -> tuple[str, dict[str, Any]]:
-        del credential_ref, hostkey_policy, connect_timeout_ms  # no in-band secret usage
+        del credential_ref  # no in-band secret usage
         target = self._target_by_ref(target_ref)
+        if target.get("transport_mode") == "live-ssh":
+            try:
+                live_session = self.live_client.open_session(
+                    target,
+                    framing=framing,
+                    hostkey_policy=hostkey_policy,
+                    connect_timeout_ms=connect_timeout_ms,
+                )
+            except LiveNetconfError as exc:
+                return "error", exc.payload
+
+            session_ref = f"session://{target['name']}/{uuid.uuid4().hex[:8]}"
+            session = Session(
+                session_ref=session_ref,
+                target_ref=target_ref,
+                target_name=target["name"],
+                profile=target_ref,
+                backend="live-ssh",
+                framing=live_session.framing,
+                capabilities=live_session.server_capabilities,
+                opened_at=datetime.now(timezone.utc).isoformat(),
+            )
+            self.sessions[session_ref] = session
+            return "ok", {
+                "session_ref": session_ref,
+                "transport": live_session.transport,
+                "server_capabilities": live_session.server_capabilities,
+                "client_capabilities": ["urn:ietf:params:netconf:base:1.0"],
+                "capability_gaps": [],
+                "hello_latency_ms": None,
+                "session_id": live_session.session_id,
+                "framed_version": live_session.framing,
+                "profile": "live-netconf",
+                "mode": "live-ssh",
+            }
+
+        del hostkey_policy, connect_timeout_ms
         try:
             profile = self.repository.profile(target["profile"])
         except FileNotFoundError as exc:
@@ -118,6 +158,7 @@ class NetconfReadEngine:
             target_ref=target_ref,
             target_name=target["name"],
             profile=target["profile"],
+            backend="fixture",
             framing=selected_framing,
             capabilities=profile.data.get("hello", {}).get("capabilities", []),
             opened_at=datetime.now(timezone.utc).isoformat(),
@@ -144,6 +185,25 @@ class NetconfReadEngine:
 
     def discover_capabilities(self, session_ref: str) -> tuple[str, dict[str, Any]]:
         session = self._require_session(session_ref)
+        if session.backend == "live-ssh":
+            return "ok", {
+                "capability_catalog": session.capabilities,
+                "version_profile": {
+                    "netconf-base": "1.1" if any("base:1.1" in cap for cap in session.capabilities) else "1.0",
+                },
+                "required_missing": [
+                    required
+                    for required in (
+                        "urn:ietf:params:netconf:capability:candidate:1.0",
+                        "urn:ietf:params:netconf:capability:with-defaults:1.0",
+                    )
+                    if required not in session.capabilities
+                ],
+                "feature_flags": [],
+                "nacm_hints": {},
+                "session_ref": session_ref,
+                "source_metadata": {"mode": "live-netconf"},
+            }
         profile = self._load_profile(session.profile)
 
         if not profile:
@@ -169,6 +229,16 @@ class NetconfReadEngine:
 
     def get_library(self, session_ref: str) -> tuple[str, dict[str, Any]]:
         session = self._require_session(session_ref)
+        if session.backend == "live-ssh":
+            target = self._target_by_ref(session.target_ref)
+            try:
+                payload = self.live_client.get_yang_library(target, session)
+            except LiveNetconfError as exc:
+                return "error", exc.payload
+            confidence = "high" if payload.get("completeness") == "complete" else "low"
+            payload["completeness"] = confidence
+            return "ok", payload
+
         profile = self._load_profile(session.profile)
         if not profile:
             return "error", self._protocol_error("PROFILE_EXPIRED", "Profile no longer available")
@@ -196,6 +266,15 @@ class NetconfReadEngine:
     ) -> tuple[str, dict[str, Any]]:
         del safety_profile_ref
         session = self._require_session(session_ref)
+        if session.backend != "fixture":
+            return "error", {
+                "status": "error",
+                "error_category": "policy",
+                "error_code": "LIVE_WRITE_UNSUPPORTED",
+                "error_type": "LIVE_WRITE_UNSUPPORTED",
+                "error_tag": "operation-not-supported",
+                "error_message": "Live NETCONF targets are read-only in the current implementation",
+            }
         profile = self._load_profile(session.profile)
         if not profile:
             return "error", self._protocol_error("PROFILE_EXPIRED", "Profile no longer available")
@@ -329,6 +408,15 @@ class NetconfReadEngine:
             }
 
         session = self._require_session(session_ref)
+        if session.backend != "fixture":
+            return "error", {
+                "status": "error",
+                "error_category": "policy",
+                "error_code": "LIVE_WRITE_UNSUPPORTED",
+                "error_type": "LIVE_WRITE_UNSUPPORTED",
+                "error_tag": "operation-not-supported",
+                "error_message": "Live NETCONF targets are read-only in the current implementation",
+            }
         profile = self._load_profile(session.profile)
         if not profile:
             return "error", self._protocol_error("PROFILE_EXPIRED", "Profile no longer available")
@@ -411,6 +499,15 @@ class NetconfReadEngine:
             }
 
         session = self._require_session(session_ref)
+        if session.backend != "fixture":
+            return "error", {
+                "status": "error",
+                "error_category": "policy",
+                "error_code": "LIVE_WRITE_UNSUPPORTED",
+                "error_type": "LIVE_WRITE_UNSUPPORTED",
+                "error_tag": "operation-not-supported",
+                "error_message": "Live NETCONF targets are read-only in the current implementation",
+            }
         profile = self._load_profile(session.profile)
         if not profile:
             return "error", self._protocol_error("PROFILE_EXPIRED", "Profile no longer available")
@@ -545,6 +642,15 @@ class NetconfReadEngine:
             }
 
         session = self._require_session(session_ref)
+        if session.backend != "fixture":
+            return "error", {
+                "status": "error",
+                "error_category": "policy",
+                "error_code": "LIVE_WRITE_UNSUPPORTED",
+                "error_type": "LIVE_WRITE_UNSUPPORTED",
+                "error_tag": "operation-not-supported",
+                "error_message": "Live NETCONF targets are read-only in the current implementation",
+            }
         profile = self._load_profile(session.profile)
         if not profile:
             return "error", self._protocol_error("PROFILE_EXPIRED", "Profile no longer available")
@@ -570,6 +676,12 @@ class NetconfReadEngine:
 
     def get_monitoring(self, session_ref: str, scope: str = "all") -> tuple[str, dict[str, Any]]:
         session = self._require_session(session_ref)
+        if session.backend == "live-ssh":
+            target = self._target_by_ref(session.target_ref)
+            try:
+                return "ok", self.live_client.get_monitoring(target, session, scope=scope)
+            except LiveNetconfError as exc:
+                return "error", exc.payload
         profile = self._load_profile(session.profile)
         if not profile:
             return "error", self._protocol_error("PROFILE_EXPIRED", "Profile no longer available")
@@ -594,8 +706,24 @@ class NetconfReadEngine:
         module_filter: list[str] | None = None,
         strict_config: bool = False,
     ) -> tuple[str, dict[str, Any]]:
-        del with_defaults, strict_config
         session = self._require_session(session_ref)
+        if session.backend == "live-ssh":
+            target = self._target_by_ref(session.target_ref)
+            try:
+                payload = self.live_client.datastore_get(
+                    target,
+                    session,
+                    datastore=datastore,
+                    xpath=xpath,
+                    subtree=subtree,
+                    with_defaults=with_defaults,
+                    strict_config=strict_config,
+                )
+            except LiveNetconfError as exc:
+                return "error", exc.payload
+            return "ok", payload
+
+        del with_defaults, strict_config
         profile = self._load_profile(session.profile)
         if not profile:
             return "error", self._protocol_error("PROFILE_EXPIRED", "Profile no longer available")

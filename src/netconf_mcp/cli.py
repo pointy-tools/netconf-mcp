@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from netconf_mcp.mcp.server import create_server
 
 
 def main() -> None:
-    server = create_server(Path("tests/fixtures"))
+    fixture_root = Path(os.environ.get("NETCONF_MCP_FIXTURE_ROOT", "tests/fixtures"))
+    inventory_path = os.environ.get("NETCONF_MCP_INVENTORY")
+    server = create_server(
+        fixture_root,
+        inventory_path=Path(inventory_path) if inventory_path else None,
+    )
     snapshot = server.exposure_snapshot()
     if hasattr(server.get_server(), "run"):
         # Runtime mode for MCP clients

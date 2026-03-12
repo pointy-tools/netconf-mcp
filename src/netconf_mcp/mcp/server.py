@@ -61,9 +61,9 @@ class MCPManifest:
 
 
 class NetconfMCPServer:
-    def __init__(self, fixture_root: Path):
+    def __init__(self, fixture_root: Path, *, inventory_path: Path | None = None, live_client: Any | None = None):
         self.fixture_root = Path(fixture_root)
-        self.engine = NetconfReadEngine(self.fixture_root)
+        self.engine = NetconfReadEngine(self.fixture_root, inventory_path=inventory_path, live_client=live_client)
         self.server = FastMCP("netconf-mcp")
         self.manifest = MCPManifest(
             tools=list(READ_ONLY_TOOLSET) + list(GUARDED_WRITE_TOOLSET),
@@ -701,6 +701,12 @@ class NetconfMCPServer:
         return MCPManifest(tools=tools, resources=resources, prompts=prompts)
 
 
-def create_server(fixture_root: Path | str | None = None) -> NetconfMCPServer:
+def create_server(
+    fixture_root: Path | str | None = None,
+    *,
+    inventory_path: Path | str | None = None,
+    live_client: Any | None = None,
+) -> NetconfMCPServer:
     root = Path(fixture_root or Path("tests/fixtures"))
-    return NetconfMCPServer(root)
+    resolved_inventory = Path(inventory_path) if inventory_path else None
+    return NetconfMCPServer(root, inventory_path=resolved_inventory, live_client=live_client)

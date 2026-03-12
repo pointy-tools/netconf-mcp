@@ -18,11 +18,12 @@ class SimulatedProfile:
 class FixtureRepository:
     """Loads immutable fixture inputs for simulator-based operation."""
 
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, inventory_path: Path | None = None):
         self.root = Path(root)
+        self.inventory_path = Path(inventory_path or self.root / "inventory.json")
 
     def inventory(self) -> list[dict[str, Any]]:
-        payload = load_fixture(self.root / "inventory.json")
+        payload = load_fixture(self.inventory_path)
         return payload["targets"]
 
     def profile(self, key: str) -> SimulatedProfile:

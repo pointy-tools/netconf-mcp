@@ -1,11 +1,97 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from netconf_mcp.mcp.server import create_server
 
 
 FIXTURES = Path("tests/fixtures")
+
+
+class DummyLiveClient:
+    def open_session(self, target, *, framing="auto", hostkey_policy="strict", connect_timeout_ms=None):
+        del hostkey_policy, connect_timeout_ms
+        selected = "base:1.0" if framing == "auto" else framing
+        return type(
+            "LiveSession",
+            (),
+            {
+                "session_id": "901",
+                "framing": selected,
+                "server_capabilities": [
+                    "urn:ietf:params:netconf:base:1.0",
+                    "urn:ietf:params:netconf:capability:with-defaults:1.0",
+                ],
+                "transport": {"protocol": "ssh", "framing": selected},
+            },
+        )()
+
+    def get_yang_library(self, target, session):
+        del target, session
+        return {
+            "module_set": [{"module": "ietf-interfaces", "revision": "2018-02-20"}],
+            "yang_hashes": {},
+            "provenance": "live-netconf",
+            "completeness": "complete",
+            "feature_matrix": {},
+            "raw_xml": "<rpc-reply/>",
+        }
+
+    def get_monitoring(self, target, session, scope="all"):
+        del target, session
+        return {
+            "scope": scope,
+            "sessions": [{"session-id": "901"}],
+            "locks": [],
+            "datastore_health": {},
+            "transport_stats": {},
+            "raw_xml": "<rpc-reply/>",
+        }
+
+    def datastore_get(self, target, session, *, datastore="running", xpath=None, subtree=None, with_defaults="explicit", strict_config=False):
+        del target, session, subtree, with_defaults
+        if xpath == "/interfaces/interface[name='eth0']/enabled":
+            value = "true"
+        else:
+            value = {"interfaces": {"interface": {"name": "eth0", "enabled": "true"}}}
+        return {
+            "resource": {"datastore": datastore, "filter": xpath or "all"},
+            "nacm_visibility": "unknown",
+            "value": value,
+            "source_metadata": {
+                "mode": "live-netconf",
+                "host": "tnsr-lab",
+                "strict_config": strict_config,
+            },
+            "raw_xml": "<rpc-reply/>",
+        }
+
+
+def _write_live_inventory(tmp_path: Path) -> Path:
+    inventory_path = tmp_path / "inventory-live.json"
+    payload = {
+        "targets": [
+            {
+                "target_ref": "target://lab/tnsr",
+                "name": "tnsr-lab",
+                "site": "lab",
+                "role": ["edge"],
+                "status": "online",
+                "safety_state": "ready",
+                "transport_mode": "live-ssh",
+                "transport": {"protocol": "ssh", "framing": "base:1.0"},
+                "host": "tnsr-lab",
+                "port": 830,
+                "username": "netops",
+                "facts": {"vendor": "netgate", "os": "tnsr"},
+                "safety_profile": "read-only",
+                "last_seen_utc": "2026-03-12T00:00:00Z",
+            }
+        ]
+    }
+    inventory_path.write_text(json.dumps(payload), encoding="utf-8")
+    return inventory_path
 
 
 def test_read_only_manifest_exposed_and_only_read_only_names():
@@ -326,3 +412,52 @@ def test_confirmed_commit_limitation_reported_when_capability_missing():
     )
     assert apply["status"] == "error"
     assert apply["error"]["error_code"] == "CONFIRMED_COMMIT_UNSUPPORTED"
+
+
+def test_live_read_only_target_can_be_probed_with_dummy_client(tmp_path: Path):
+    inventory_path = _write_live_inventory(tmp_path)
+    runtime = create_server(FIXTURES, inventory_path=inventory_path, live_client=DummyLiveClient())
+    tool = runtime.get_server()
+
+    targets = tool._tools["inventory.list_targets"]({"arguments": {"filter": {"status": "online"}}})
+    assert any(item["target_ref"] == "target://lab/tnsr" for item in targets["data"]["targets"])
+
+    open_session = tool._tools["netconf.open_session"](
+        {
+            "target_ref": "target://lab/tnsr",
+            "arguments": {"credential_ref": "cred://vault/lab/tnsr"},
+        }
+    )
+    assert open_session["status"] == "ok"
+    assert open_session["data"]["mode"] == "live-ssh"
+    session_ref = open_session["data"]["session_ref"]
+
+    caps = tool._tools["netconf.discover_capabilities"]({"session_ref": session_ref})
+    assert caps["status"] == "ok"
+    assert "urn:ietf:params:netconf:capability:with-defaults:1.0" in caps["data"]["capability_catalog"]
+
+    lib = tool._tools["yang.get_library"]({"session_ref": session_ref})
+    assert lib["status"] == "ok"
+    assert lib["data"]["provenance"] == "live-netconf"
+
+    config = tool._tools["datastore.get_config"](
+        {
+            "session_ref": session_ref,
+            "arguments": {"datastore": "running", "xpath": "/interfaces/interface[name='eth0']/enabled"},
+        }
+    )
+    assert config["status"] == "ok"
+    assert config["data"]["value"] == "true"
+
+    plan = tool._tools["config.plan_edit"](
+        {
+            "session_ref": session_ref,
+            "arguments": {
+                "plan_scope": "candidate",
+                "intent": "merge",
+                "edits": [{"yang_path": "/interfaces/interface[name='eth0']/enabled", "action": "set", "value": False}],
+            },
+        }
+    )
+    assert plan["status"] == "error"
+    assert plan["error"]["error_code"] == "LIVE_WRITE_UNSUPPORTED"
