@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-from netconf_mcp.transport.live import LiveNetconfSSHClient
+from netconf_mcp.transport.live import LiveNetconfSession, LiveNetconfSSHClient
 
 
 def _as_list(value: Any) -> list[Any]:
@@ -50,16 +50,52 @@ class StaticRouteRecord:
 class BGPNeighborRecord:
     peer: str
     enabled: bool | None = None
+    bfd: bool | None = None
     peer_group: str | None = None
     remote_asn: str | None = None
     description: str | None = None
     update_source: str | None = None
+    ebgp_multihop_max_hops: int | None = None
+
+
+@dataclass
+class PrefixListRuleRecord:
+    sequence: str
+    action: str | None = None
+    prefix: str | None = None
+
+
+@dataclass
+class PrefixListRecord:
+    name: str
+    rules: list[PrefixListRuleRecord] = field(default_factory=list)
+
+
+@dataclass
+class RouteMapRuleRecord:
+    sequence: str
+    policy: str | None = None
+    match_ip_prefix_list: str | None = None
+    set_as_path_prepend: str | None = None
+
+
+@dataclass
+class RouteMapRecord:
+    name: str
+    rules: list[RouteMapRuleRecord] = field(default_factory=list)
 
 
 @dataclass
 class BGPSnapshot:
     asn: str | None = None
     router_id: str | None = None
+    vrf_id: str | None = None
+    ipv4_unicast_enabled: bool | None = None
+    ebgp_requires_policy: bool | None = None
+    log_neighbor_changes: bool | None = None
+    network_import_check: bool | None = None
+    keepalive_seconds: int | None = None
+    hold_time_seconds: int | None = None
     neighbors: list[BGPNeighborRecord] = field(default_factory=list)
     network_announcements: list[str] = field(default_factory=list)
 
@@ -75,6 +111,8 @@ class TNSRSnapshot:
     interfaces: list[InterfaceRecord]
     static_routes: list[StaticRouteRecord]
     bgp: BGPSnapshot
+    prefix_lists: list[PrefixListRecord]
+    route_maps: list[RouteMapRecord]
     raw_sections: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -97,11 +135,14 @@ class TNSRCollector:
             strict_config=True,
         )
         config = config_payload["value"]
+        route_config = self._collect_route_config_subtree(target, session, config)
 
         monitoring = self.client.get_monitoring(target, session, scope="all")
         interfaces = self._collect_interfaces(config)
         static_routes = self._collect_static_routes(config)
-        bgp = self._collect_bgp(config)
+        bgp = self._collect_bgp(route_config)
+        prefix_lists = self._collect_prefix_lists(route_config)
+        route_maps = self._collect_route_maps(route_config)
 
         return TNSRSnapshot(
             snapshot_type="tnsr-normalized-config-v1",
@@ -120,11 +161,37 @@ class TNSRCollector:
             interfaces=interfaces,
             static_routes=static_routes,
             bgp=bgp,
+            prefix_lists=prefix_lists,
+            route_maps=route_maps,
             raw_sections={
                 "config_root_keys": sorted(config.keys()) if isinstance(config, dict) else [],
                 "monitoring_sessions": monitoring.get("sessions", []),
             },
         )
+
+    def _collect_route_config_subtree(
+        self,
+        target: dict[str, Any],
+        session: LiveNetconfSession,
+        config: dict[str, Any],
+    ) -> dict[str, Any]:
+        route_config = config.get("route-config")
+        if isinstance(route_config, dict) and route_config.get("prefix-lists") and route_config.get("route-maps"):
+            return route_config
+
+        try:
+            route_payload = self.client.datastore_get(
+                target,
+                session,
+                datastore="running",
+                xpath="/route-config",
+                strict_config=True,
+            )
+        except Exception:
+            return route_config if isinstance(route_config, dict) else {}
+
+        route_value = route_payload.get("value")
+        return route_value if isinstance(route_value, dict) else {}
 
     def _collect_interfaces(self, config: dict[str, Any]) -> list[InterfaceRecord]:
         interfaces: list[InterfaceRecord] = []
@@ -180,8 +247,8 @@ class TNSRCollector:
                 )
         return routes
 
-    def _collect_bgp(self, config: dict[str, Any]) -> BGPSnapshot:
-        router = config.get("route-config", {}).get("dynamic", {}).get("bgp", {}).get("routers", {}).get("router", {})
+    def _collect_bgp(self, route_config: dict[str, Any]) -> BGPSnapshot:
+        router = route_config.get("dynamic", {}).get("bgp", {}).get("routers", {}).get("router", {})
         if not isinstance(router, dict):
             return BGPSnapshot()
 
@@ -194,10 +261,12 @@ class TNSRCollector:
                 BGPNeighborRecord(
                     peer=str(item.get("peer")),
                     enabled=_to_bool(item.get("enable")),
+                    bfd=_to_bool(item.get("bfd")),
                     peer_group=item.get("peer-group-name"),
                     remote_asn=item.get("remote-asn"),
                     description=item.get("description"),
                     update_source=item.get("update-source"),
+                    ebgp_multihop_max_hops=_to_int(item.get("ebgp-multihop", {}).get("max-hop-count")),
                 )
             )
 
@@ -216,9 +285,73 @@ class TNSRCollector:
         return BGPSnapshot(
             asn=router.get("asn"),
             router_id=router.get("router-id"),
+            vrf_id=router.get("vrf-id"),
+            ipv4_unicast_enabled=_to_bool(router.get("defaults", {}).get("ipv4-unicast-enabled")),
+            ebgp_requires_policy=_to_bool(router.get("ebgp-requires-policy")),
+            log_neighbor_changes=_to_bool(router.get("log-neighbor-changes")),
+            network_import_check=_to_bool(router.get("network-import-check")),
+            keepalive_seconds=_to_int(router.get("timers", {}).get("keep-alive")),
+            hold_time_seconds=_to_int(router.get("timers", {}).get("hold-time")),
             neighbors=neighbors,
             network_announcements=announcements,
         )
+
+    def _collect_prefix_lists(self, route_config: dict[str, Any]) -> list[PrefixListRecord]:
+        prefix_lists = []
+        prefix_root = route_config.get("prefix-lists")
+        if not isinstance(prefix_root, dict):
+            prefix_root = route_config.get("dynamic", {}).get("prefix-lists", {})
+        items = prefix_root.get("list")
+        for item in _as_list(items):
+            if not isinstance(item, dict):
+                continue
+            rules = []
+            for rule in _as_list(item.get("rules", {}).get("rule")):
+                if not isinstance(rule, dict):
+                    continue
+                rules.append(
+                    PrefixListRuleRecord(
+                        sequence=str(rule.get("sequence")),
+                        action=rule.get("action"),
+                        prefix=rule.get("prefix"),
+                    )
+                )
+            prefix_lists.append(
+                PrefixListRecord(
+                    name=str(item.get("name")),
+                    rules=rules,
+                )
+            )
+        return prefix_lists
+
+    def _collect_route_maps(self, route_config: dict[str, Any]) -> list[RouteMapRecord]:
+        route_maps = []
+        route_map_root = route_config.get("route-maps")
+        if not isinstance(route_map_root, dict):
+            route_map_root = route_config.get("dynamic", {}).get("route-maps", {})
+        items = route_map_root.get("map")
+        for item in _as_list(items):
+            if not isinstance(item, dict):
+                continue
+            rules = []
+            for rule in _as_list(item.get("rules", {}).get("rule")):
+                if not isinstance(rule, dict):
+                    continue
+                rules.append(
+                    RouteMapRuleRecord(
+                        sequence=str(rule.get("sequence")),
+                        policy=rule.get("policy"),
+                        match_ip_prefix_list=rule.get("match", {}).get("ip-address-prefix-list"),
+                        set_as_path_prepend=rule.get("set", {}).get("as-path", {}).get("prepend"),
+                    )
+                )
+            route_maps.append(
+                RouteMapRecord(
+                    name=str(item.get("name")),
+                    rules=rules,
+                )
+            )
+        return route_maps
 
     @staticmethod
     def _extract_ipv4_addresses(interface: dict[str, Any]) -> list[str]:
@@ -238,3 +371,11 @@ class TNSRCollector:
                 if isinstance(item, dict) and item.get("ip"):
                     addresses.append(str(item["ip"]))
         return addresses
+
+
+def _to_int(value: Any) -> int | None:
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    return None

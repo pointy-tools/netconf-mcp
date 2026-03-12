@@ -68,17 +68,25 @@ class FakeClient:
                                     "router-id": "10.0.0.1",
                                     "neighbors": {
                                         "neighbor": [
-                                            {
-                                                "peer": "192.0.2.2",
-                                                "enable": "true",
-                                                "peer-group-name": "TRANSIT",
-                                                "remote-asn": "64512",
-                                            }
-                                        ]
-                                    },
-                                    "address-families": {
-                                        "ipv4": {
-                                            "unicast": {
+                                        {
+                                            "peer": "192.0.2.2",
+                                            "bfd": "true",
+                                            "enable": "true",
+                                            "peer-group-name": "TRANSIT",
+                                            "remote-asn": "64512",
+                                            "ebgp-multihop": {"max-hop-count": "4"},
+                                        }
+                                    ]
+                                },
+                                "defaults": {"ipv4-unicast-enabled": "false"},
+                                "ebgp-requires-policy": "true",
+                                "log-neighbor-changes": "true",
+                                "network-import-check": "true",
+                                "timers": {"keep-alive": "3", "hold-time": "9"},
+                                "vrf-id": "default",
+                                "address-families": {
+                                    "ipv4": {
+                                        "unicast": {
                                                 "network-announcements": {
                                                     "network": [{"ip-prefix": "10.0.0.0/24"}]
                                                 }
@@ -88,7 +96,26 @@ class FakeClient:
                                 }
                             }
                         }
-                    }
+                    },
+                    "prefix-lists": {
+                        "list": {
+                            "name": "DEFAULT-OUT",
+                            "rules": {"rule": {"sequence": "10", "action": "permit", "prefix": "0.0.0.0/0"}},
+                        }
+                    },
+                    "route-maps": {
+                        "map": {
+                            "name": "TRANSIT-OUT",
+                            "rules": {
+                                "rule": {
+                                    "sequence": "10",
+                                    "policy": "permit",
+                                    "match": {"ip-address-prefix-list": "DEFAULT-OUT"},
+                                    "set": {"as-path": {"prepend": "65001"}},
+                                }
+                            }
+                        },
+                    },
                 },
             }
         }
@@ -120,5 +147,14 @@ def test_tnsr_collector_normalizes_interfaces_routes_and_bgp():
     assert payload["static_routes"][0]["interface"] == "WAN"
     assert payload["bgp"]["asn"] == "65001"
     assert payload["bgp"]["router_id"] == "10.0.0.1"
+    assert payload["bgp"]["vrf_id"] == "default"
+    assert payload["bgp"]["ebgp_requires_policy"] is True
+    assert payload["bgp"]["keepalive_seconds"] == 3
     assert payload["bgp"]["neighbors"][0]["peer"] == "192.0.2.2"
+    assert payload["bgp"]["neighbors"][0]["bfd"] is True
+    assert payload["bgp"]["neighbors"][0]["ebgp_multihop_max_hops"] == 4
     assert payload["bgp"]["network_announcements"] == ["10.0.0.0/24"]
+    assert payload["prefix_lists"][0]["name"] == "DEFAULT-OUT"
+    assert payload["prefix_lists"][0]["rules"][0]["prefix"] == "0.0.0.0/0"
+    assert payload["route_maps"][0]["name"] == "TRANSIT-OUT"
+    assert payload["route_maps"][0]["rules"][0]["match_ip_prefix_list"] == "DEFAULT-OUT"

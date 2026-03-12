@@ -41,11 +41,29 @@ def _sample_snapshot_payload() -> dict:
         "bgp": {
             "asn": "65001",
             "router_id": "10.0.0.1",
+            "vrf_id": "default",
+            "ipv4_unicast_enabled": False,
+            "ebgp_requires_policy": True,
+            "log_neighbor_changes": True,
+            "network_import_check": True,
+            "keepalive_seconds": 3,
+            "hold_time_seconds": 9,
             "neighbors": [
-                {"peer": "192.0.2.2", "enabled": True, "peer_group": "TRANSIT", "remote_asn": "64512", "description": None, "update_source": None}
+                {"peer": "192.0.2.2", "enabled": True, "bfd": True, "peer_group": "TRANSIT", "remote_asn": "64512", "description": None, "update_source": None, "ebgp_multihop_max_hops": 4}
             ],
             "network_announcements": ["10.0.0.0/24"],
         },
+        "prefix_lists": [
+            {"name": "DEFAULT-OUT", "rules": [{"sequence": "10", "action": "permit", "prefix": "0.0.0.0/0"}]}
+        ],
+        "route_maps": [
+            {
+                "name": "TRANSIT-OUT",
+                "rules": [
+                    {"sequence": "10", "policy": "permit", "match_ip_prefix_list": "DEFAULT-OUT", "set_as_path_prepend": "65001"}
+                ],
+            }
+        ],
         "raw_sections": {"config_root_keys": ["interfaces-config"]},
     }
 
@@ -58,6 +76,10 @@ def test_build_managed_tnsr_config_from_payload_normalizes_and_sorts():
     assert [item["name"] for item in managed["config"]["interfaces"]] == ["LAN", "WAN", "eth0"]
     assert managed["config"]["routing"]["static_routes"][0]["destination_prefix"] == "0.0.0.0/0"
     assert managed["config"]["bgp"]["neighbors"][0]["peer"] == "192.0.2.2"
+    assert managed["config"]["bgp"]["ebgp_requires_policy"] is True
+    assert managed["config"]["bgp"]["neighbors"][0]["bfd"] is True
+    assert managed["config"]["routing_policy"]["prefix_lists"][0]["name"] == "DEFAULT-OUT"
+    assert managed["config"]["routing_policy"]["route_maps"][0]["name"] == "TRANSIT-OUT"
     assert managed["observed_state"]["netconf_capabilities"] == [
         "urn:ietf:params:netconf:base:1.1",
         "urn:ietf:params:netconf:capability:candidate:1.0",
@@ -74,6 +96,8 @@ def test_build_tnsr_proposal_artifacts_reports_create_when_managed_file_missing(
     assert "Managed file: create" in proposal_text
     assert f"Target file: `{managed_path}`" in proposal_text
     assert f"+++ {managed_path} (proposed)" in proposal_text
+    assert "Prefix lists: 0 -> 1" in proposal_text
+    assert "Route maps: 0 -> 1" in proposal_text
     candidate = json.loads(candidate_text)
     assert candidate["config"]["bgp"]["asn"] == "65001"
 
@@ -90,6 +114,7 @@ def test_build_tnsr_proposal_artifacts_shows_update_diff(tmp_path: Path):
                     "interfaces": [],
                     "routing": {"static_routes": []},
                     "bgp": {"asn": None, "router_id": None, "neighbors": [], "network_announcements": []},
+                    "routing_policy": {"prefix_lists": [], "route_maps": []},
                 },
                 "observed_state": {"netconf_capabilities": [], "yang_modules": []},
                 "metadata": {"generated_from_snapshot_type": "tnsr-normalized-config-v1", "collected_at_utc": "2026-03-12T00:00:00+00:00"},
@@ -109,3 +134,4 @@ def test_build_tnsr_proposal_artifacts_shows_update_diff(tmp_path: Path):
     assert "Managed file: update" in proposal_text
     assert "-    \"interfaces\": []" in proposal_text
     assert "+    \"interfaces\": [" in proposal_text
+    assert "+      \"prefix_lists\": [" in proposal_text

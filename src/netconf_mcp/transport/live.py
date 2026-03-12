@@ -128,14 +128,16 @@ class LiveNetconfSSHClient:
     ) -> dict[str, Any]:
         del session, subtree, with_defaults
         if strict_config:
+            filter_xml = self._build_subtree_filter(xpath) if xpath else ""
             rpc_xml = (
                 "<rpc message-id='301' xmlns='urn:ietf:params:xml:ns:netconf:base:1.0'>"
-                f"<get-config><source><{datastore}/></source></get-config></rpc>"
+                f"<get-config><source><{datastore}/></source>{filter_xml}</get-config></rpc>"
             )
         else:
+            filter_xml = self._build_subtree_filter(xpath) if xpath else ""
             rpc_xml = (
                 "<rpc message-id='302' xmlns='urn:ietf:params:xml:ns:netconf:base:1.0'>"
-                "<get/></rpc>"
+                f"<get>{filter_xml}</get></rpc>"
             )
 
         reply = self._exchange(target, rpc_xml=rpc_xml)
@@ -144,6 +146,8 @@ class LiveNetconfSSHClient:
 
         if xpath:
             matches = self._select_simple_path(data_node, xpath)
+            if not matches and self._local_name(data_node.tag) == xpath.strip("/").split("/")[-1].split(":")[-1]:
+                matches = [data_node]
             if not matches:
                 raise LiveNetconfError(
                     {
@@ -171,6 +175,41 @@ class LiveNetconfSSHClient:
             },
             "raw_xml": etree.tostring(reply, encoding="unicode"),
         }
+
+    @classmethod
+    def _build_subtree_filter(cls, xpath: str) -> str:
+        segments = [segment for segment in xpath.split("/") if segment]
+        if not segments:
+            return ""
+
+        xml = ""
+        closers: list[str] = []
+        for raw_segment in segments:
+            match = re.fullmatch(
+                r"(?P<name>[A-Za-z0-9:_-]+)(\[(?P<key>[A-Za-z0-9:_-]+)='(?P<value>[^']+)'\])?",
+                raw_segment,
+            )
+            if not match:
+                raise LiveNetconfError(
+                    {
+                        "status": "error",
+                        "error_category": "schema",
+                        "error_code": "UNSUPPORTED_XPATH",
+                        "error_type": "UNSUPPORTED_XPATH",
+                        "error_tag": "invalid-value",
+                        "error_message": f"Unsupported xpath segment: {raw_segment}",
+                    }
+                )
+
+            name = match.group("name").split(":")[-1]
+            xml += f"<{name}>"
+            closers.append(f"</{name}>")
+            if match.group("key"):
+                key = match.group("key").split(":")[-1]
+                value = match.group("value")
+                xml += f"<{key}>{value}</{key}>"
+
+        return f"<filter type='subtree'>{xml}{''.join(reversed(closers))}</filter>"
 
     def _exchange(
         self,

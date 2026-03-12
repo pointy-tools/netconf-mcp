@@ -75,6 +75,7 @@ What is working now:
 - experimental live read-only TNSR NETCONF probing
 - normalized TNSR snapshot generation for code-diff workflows
 - TNSR managed-config proposal generation from normalized snapshots
+- expanded TNSR routing-policy coverage for prefix-lists and route-maps
 
 What is still intentionally deferred:
 

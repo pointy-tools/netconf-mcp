@@ -11,6 +11,10 @@ from netconf_mcp.vendors.tnsr import (
     BGPNeighborRecord,
     BGPSnapshot,
     InterfaceRecord,
+    PrefixListRecord,
+    PrefixListRuleRecord,
+    RouteMapRecord,
+    RouteMapRuleRecord,
     StaticRouteRecord,
     TNSRSnapshot,
 )
@@ -65,14 +69,53 @@ def build_managed_tnsr_config(snapshot: TNSRSnapshot) -> dict[str, Any]:
             {
                 "peer": item.peer,
                 "enabled": item.enabled,
+                "bfd": item.bfd,
                 "peer_group": item.peer_group,
                 "remote_asn": item.remote_asn,
                 "description": item.description,
                 "update_source": item.update_source,
+                "ebgp_multihop_max_hops": item.ebgp_multihop_max_hops,
             }
             for item in snapshot.bgp.neighbors
         ),
         key=lambda item: item["peer"],
+    )
+
+    prefix_lists = sorted(
+        (
+            {
+                "name": item.name,
+                "rules": [
+                    {
+                        "sequence": rule.sequence,
+                        "action": rule.action,
+                        "prefix": rule.prefix,
+                    }
+                    for rule in sorted(item.rules, key=lambda rule: int(rule.sequence) if rule.sequence.isdigit() else rule.sequence)
+                ],
+            }
+            for item in snapshot.prefix_lists
+        ),
+        key=lambda item: item["name"],
+    )
+
+    route_maps = sorted(
+        (
+            {
+                "name": item.name,
+                "rules": [
+                    {
+                        "sequence": rule.sequence,
+                        "policy": rule.policy,
+                        "match_ip_prefix_list": rule.match_ip_prefix_list,
+                        "set_as_path_prepend": rule.set_as_path_prepend,
+                    }
+                    for rule in sorted(item.rules, key=lambda rule: int(rule.sequence) if rule.sequence.isdigit() else rule.sequence)
+                ],
+            }
+            for item in snapshot.route_maps
+        ),
+        key=lambda item: item["name"],
     )
 
     capabilities = _sorted_unique(snapshot.capabilities)
@@ -106,8 +149,19 @@ def build_managed_tnsr_config(snapshot: TNSRSnapshot) -> dict[str, Any]:
             "bgp": {
                 "asn": snapshot.bgp.asn,
                 "router_id": snapshot.bgp.router_id,
+                "vrf_id": snapshot.bgp.vrf_id,
+                "ipv4_unicast_enabled": snapshot.bgp.ipv4_unicast_enabled,
+                "ebgp_requires_policy": snapshot.bgp.ebgp_requires_policy,
+                "log_neighbor_changes": snapshot.bgp.log_neighbor_changes,
+                "network_import_check": snapshot.bgp.network_import_check,
+                "keepalive_seconds": snapshot.bgp.keepalive_seconds,
+                "hold_time_seconds": snapshot.bgp.hold_time_seconds,
                 "neighbors": neighbors,
                 "network_announcements": _sorted_unique(snapshot.bgp.network_announcements),
+            },
+            "routing_policy": {
+                "prefix_lists": prefix_lists,
+                "route_maps": route_maps,
             },
         },
         "observed_state": {
@@ -153,19 +207,57 @@ def build_managed_tnsr_config_from_payload(payload: dict[str, Any]) -> dict[str,
         bgp=BGPSnapshot(
             asn=payload.get("bgp", {}).get("asn"),
             router_id=payload.get("bgp", {}).get("router_id"),
+            vrf_id=payload.get("bgp", {}).get("vrf_id"),
+            ipv4_unicast_enabled=payload.get("bgp", {}).get("ipv4_unicast_enabled"),
+            ebgp_requires_policy=payload.get("bgp", {}).get("ebgp_requires_policy"),
+            log_neighbor_changes=payload.get("bgp", {}).get("log_neighbor_changes"),
+            network_import_check=payload.get("bgp", {}).get("network_import_check"),
+            keepalive_seconds=payload.get("bgp", {}).get("keepalive_seconds"),
+            hold_time_seconds=payload.get("bgp", {}).get("hold_time_seconds"),
             neighbors=[
                 BGPNeighborRecord(
                     peer=item["peer"],
                     enabled=item.get("enabled"),
+                    bfd=item.get("bfd"),
                     peer_group=item.get("peer_group"),
                     remote_asn=item.get("remote_asn"),
                     description=item.get("description"),
                     update_source=item.get("update_source"),
+                    ebgp_multihop_max_hops=item.get("ebgp_multihop_max_hops"),
                 )
                 for item in payload.get("bgp", {}).get("neighbors", [])
             ],
             network_announcements=list(payload.get("bgp", {}).get("network_announcements", [])),
         ),
+        prefix_lists=[
+            PrefixListRecord(
+                name=item["name"],
+                rules=[
+                    PrefixListRuleRecord(
+                        sequence=rule["sequence"],
+                        action=rule.get("action"),
+                        prefix=rule.get("prefix"),
+                    )
+                    for rule in item.get("rules", [])
+                ],
+            )
+            for item in payload.get("prefix_lists", [])
+        ],
+        route_maps=[
+            RouteMapRecord(
+                name=item["name"],
+                rules=[
+                    RouteMapRuleRecord(
+                        sequence=rule["sequence"],
+                        policy=rule.get("policy"),
+                        match_ip_prefix_list=rule.get("match_ip_prefix_list"),
+                        set_as_path_prepend=rule.get("set_as_path_prepend"),
+                    )
+                    for rule in item.get("rules", [])
+                ],
+            )
+            for item in payload.get("route_maps", [])
+        ],
         raw_sections=dict(payload.get("raw_sections", {})),
     )
     return build_managed_tnsr_config(snapshot)
@@ -175,16 +267,22 @@ def _proposal_summary(existing: dict[str, Any] | None, candidate: dict[str, Any]
     current_interfaces = len(existing.get("config", {}).get("interfaces", [])) if existing else 0
     current_routes = len(existing.get("config", {}).get("routing", {}).get("static_routes", [])) if existing else 0
     current_neighbors = len(existing.get("config", {}).get("bgp", {}).get("neighbors", [])) if existing else 0
+    current_prefix_lists = len(existing.get("config", {}).get("routing_policy", {}).get("prefix_lists", [])) if existing else 0
+    current_route_maps = len(existing.get("config", {}).get("routing_policy", {}).get("route_maps", [])) if existing else 0
 
     candidate_interfaces = len(candidate["config"]["interfaces"])
     candidate_routes = len(candidate["config"]["routing"]["static_routes"])
     candidate_neighbors = len(candidate["config"]["bgp"]["neighbors"])
+    candidate_prefix_lists = len(candidate["config"]["routing_policy"]["prefix_lists"])
+    candidate_route_maps = len(candidate["config"]["routing_policy"]["route_maps"])
 
     return [
         f"Managed file: {'update' if existing else 'create'}",
         f"Interfaces: {current_interfaces} -> {candidate_interfaces}",
         f"Static routes: {current_routes} -> {candidate_routes}",
         f"BGP neighbors: {current_neighbors} -> {candidate_neighbors}",
+        f"Prefix lists: {current_prefix_lists} -> {candidate_prefix_lists}",
+        f"Route maps: {current_route_maps} -> {candidate_route_maps}",
     ]
 
 

@@ -119,6 +119,9 @@ The snapshot currently normalizes:
 - interfaces
 - static routes
 - BGP global config and neighbors
+- BGP timers and policy-requirement flags
+- prefix-lists when the live subtree is exposed cleanly
+- route-maps when the live subtree is exposed cleanly
 
 ## Snapshot-to-code proposal flow
 
