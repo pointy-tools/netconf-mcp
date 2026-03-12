@@ -64,6 +64,58 @@ def _sample_snapshot_payload() -> dict:
                 ],
             }
         ],
+        "bfd_sessions": [
+            {
+                "name": "transit-bfd",
+                "enabled": True,
+                "interface": "LAN",
+                "local_ip_address": "10.0.0.1",
+                "peer_ip_address": "192.0.2.2",
+                "desired_min_tx": 500000,
+                "required_min_rx": 500000,
+                "detect_multiplier": 3,
+            }
+        ],
+        "nat_rulesets": [
+            {
+                "name": "WAN-nat",
+                "description": "NAT for WAN",
+                "rules": [
+                    {
+                        "sequence": "1000",
+                        "description": "Dynamic NAT from RFC1918",
+                        "direction": "out",
+                        "dynamic": True,
+                        "algorithm": "ip-hash",
+                        "match_from_prefix": "10.0.0.0/8",
+                        "translation_interface": "WAN",
+                    }
+                ],
+            }
+        ],
+        "acl_rulesets": [
+            {
+                "name": "LAN-filter",
+                "description": "Filter rules for LAN",
+                "rules": [
+                    {
+                        "sequence": "10",
+                        "description": "Permit RFC1918 egress",
+                        "direction": "out",
+                        "ip_version": "ipv4",
+                        "pass_action": True,
+                        "stateful": True,
+                        "protocol_set": None,
+                        "from_prefix": None,
+                        "to_prefix": "10.0.0.0/8",
+                    }
+                ],
+            }
+        ],
+        "interface_policy_bindings": [
+            {"interface": "LAN", "nat_ruleset": None, "filter_ruleset": "LAN-filter"},
+            {"interface": "WAN", "nat_ruleset": "WAN-nat", "filter_ruleset": "WAN-filter"},
+        ],
         "raw_sections": {"config_root_keys": ["interfaces-config"]},
     }
 
@@ -80,6 +132,10 @@ def test_build_managed_tnsr_config_from_payload_normalizes_and_sorts():
     assert managed["config"]["bgp"]["neighbors"][0]["bfd"] is True
     assert managed["config"]["routing_policy"]["prefix_lists"][0]["name"] == "DEFAULT-OUT"
     assert managed["config"]["routing_policy"]["route_maps"][0]["name"] == "TRANSIT-OUT"
+    assert managed["config"]["bfd"]["sessions"][0]["name"] == "transit-bfd"
+    assert managed["config"]["nat"]["rulesets"][0]["name"] == "WAN-nat"
+    assert managed["config"]["acl"]["rulesets"][0]["name"] == "LAN-filter"
+    assert managed["config"]["acl"]["interface_bindings"][0]["interface"] == "LAN"
     assert managed["observed_state"]["netconf_capabilities"] == [
         "urn:ietf:params:netconf:base:1.1",
         "urn:ietf:params:netconf:capability:candidate:1.0",
@@ -98,6 +154,9 @@ def test_build_tnsr_proposal_artifacts_reports_create_when_managed_file_missing(
     assert f"+++ {managed_path} (proposed)" in proposal_text
     assert "Prefix lists: 0 -> 1" in proposal_text
     assert "Route maps: 0 -> 1" in proposal_text
+    assert "BFD sessions: 0 -> 1" in proposal_text
+    assert "NAT rulesets: 0 -> 1" in proposal_text
+    assert "ACL rulesets: 0 -> 1" in proposal_text
     candidate = json.loads(candidate_text)
     assert candidate["config"]["bgp"]["asn"] == "65001"
 
@@ -115,6 +174,9 @@ def test_build_tnsr_proposal_artifacts_shows_update_diff(tmp_path: Path):
                     "routing": {"static_routes": []},
                     "bgp": {"asn": None, "router_id": None, "neighbors": [], "network_announcements": []},
                     "routing_policy": {"prefix_lists": [], "route_maps": []},
+                    "bfd": {"sessions": []},
+                    "nat": {"rulesets": []},
+                    "acl": {"rulesets": [], "interface_bindings": []},
                 },
                 "observed_state": {"netconf_capabilities": [], "yang_modules": []},
                 "metadata": {"generated_from_snapshot_type": "tnsr-normalized-config-v1", "collected_at_utc": "2026-03-12T00:00:00+00:00"},
@@ -135,3 +197,5 @@ def test_build_tnsr_proposal_artifacts_shows_update_diff(tmp_path: Path):
     assert "-    \"interfaces\": []" in proposal_text
     assert "+    \"interfaces\": [" in proposal_text
     assert "+      \"prefix_lists\": [" in proposal_text
+    assert "+      \"sessions\": [" in proposal_text
+    assert "+      \"rulesets\": [" in proposal_text

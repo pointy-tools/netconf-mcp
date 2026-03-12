@@ -122,6 +122,9 @@ The snapshot currently normalizes:
 - BGP timers and policy-requirement flags
 - prefix-lists when the live subtree is exposed cleanly
 - route-maps when the live subtree is exposed cleanly
+- BFD sessions
+- NAT rulesets from `vpf-config`
+- VPF filter-rulesets and interface policy bindings
 
 ## Snapshot-to-code proposal flow
 

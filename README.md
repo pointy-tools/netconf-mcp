@@ -76,6 +76,8 @@ What is working now:
 - normalized TNSR snapshot generation for code-diff workflows
 - TNSR managed-config proposal generation from normalized snapshots
 - expanded TNSR routing-policy coverage for prefix-lists and route-maps
+- TNSR BFD session coverage in snapshot and proposal outputs
+- TNSR NAT and VPF filter-ruleset coverage for source-of-truth proposals
 
 What is still intentionally deferred:
 

@@ -86,6 +86,63 @@ class RouteMapRecord:
 
 
 @dataclass
+class BFDSessionRecord:
+    name: str
+    enabled: bool | None = None
+    interface: str | None = None
+    local_ip_address: str | None = None
+    peer_ip_address: str | None = None
+    desired_min_tx: int | None = None
+    required_min_rx: int | None = None
+    detect_multiplier: int | None = None
+
+
+@dataclass
+class NATRuleRecord:
+    sequence: str
+    description: str | None = None
+    direction: str | None = None
+    dynamic: bool | None = None
+    algorithm: str | None = None
+    match_from_prefix: str | None = None
+    translation_interface: str | None = None
+
+
+@dataclass
+class NATRulesetRecord:
+    name: str
+    description: str | None = None
+    rules: list[NATRuleRecord] = field(default_factory=list)
+
+
+@dataclass
+class ACLRuleRecord:
+    sequence: str
+    description: str | None = None
+    direction: str | None = None
+    ip_version: str | None = None
+    pass_action: bool | None = None
+    stateful: bool | None = None
+    protocol_set: str | None = None
+    from_prefix: str | None = None
+    to_prefix: str | None = None
+
+
+@dataclass
+class ACLRulesetRecord:
+    name: str
+    description: str | None = None
+    rules: list[ACLRuleRecord] = field(default_factory=list)
+
+
+@dataclass
+class InterfacePolicyBindingRecord:
+    interface: str
+    nat_ruleset: str | None = None
+    filter_ruleset: str | None = None
+
+
+@dataclass
 class BGPSnapshot:
     asn: str | None = None
     router_id: str | None = None
@@ -113,6 +170,10 @@ class TNSRSnapshot:
     bgp: BGPSnapshot
     prefix_lists: list[PrefixListRecord]
     route_maps: list[RouteMapRecord]
+    bfd_sessions: list[BFDSessionRecord]
+    nat_rulesets: list[NATRulesetRecord]
+    acl_rulesets: list[ACLRulesetRecord]
+    interface_policy_bindings: list[InterfacePolicyBindingRecord]
     raw_sections: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -143,6 +204,10 @@ class TNSRCollector:
         bgp = self._collect_bgp(route_config)
         prefix_lists = self._collect_prefix_lists(route_config)
         route_maps = self._collect_route_maps(route_config)
+        bfd_sessions = self._collect_bfd_sessions(config)
+        nat_rulesets = self._collect_nat_rulesets(config)
+        acl_rulesets = self._collect_acl_rulesets(config)
+        interface_policy_bindings = self._collect_interface_policy_bindings(config)
 
         return TNSRSnapshot(
             snapshot_type="tnsr-normalized-config-v1",
@@ -163,6 +228,10 @@ class TNSRCollector:
             bgp=bgp,
             prefix_lists=prefix_lists,
             route_maps=route_maps,
+            bfd_sessions=bfd_sessions,
+            nat_rulesets=nat_rulesets,
+            acl_rulesets=acl_rulesets,
+            interface_policy_bindings=interface_policy_bindings,
             raw_sections={
                 "config_root_keys": sorted(config.keys()) if isinstance(config, dict) else [],
                 "monitoring_sessions": monitoring.get("sessions", []),
@@ -352,6 +421,103 @@ class TNSRCollector:
                 )
             )
         return route_maps
+
+    def _collect_bfd_sessions(self, config: dict[str, Any]) -> list[BFDSessionRecord]:
+        sessions = []
+        items = config.get("bfd-config", {}).get("bfd-table", {}).get("bfd-session")
+        for item in _as_list(items):
+            if not isinstance(item, dict):
+                continue
+            sessions.append(
+                BFDSessionRecord(
+                    name=str(item.get("name")),
+                    enabled=_to_bool(item.get("enable")),
+                    interface=item.get("interface"),
+                    local_ip_address=item.get("local-ip-address"),
+                    peer_ip_address=item.get("peer-ip-address"),
+                    desired_min_tx=_to_int(item.get("desired-min-tx")),
+                    required_min_rx=_to_int(item.get("required-min-rx")),
+                    detect_multiplier=_to_int(item.get("detect-multiplier")),
+                )
+            )
+        return sessions
+
+    def _collect_nat_rulesets(self, config: dict[str, Any]) -> list[NATRulesetRecord]:
+        rulesets = []
+        items = config.get("vpf-config", {}).get("nat-rulesets", {}).get("ruleset")
+        for item in _as_list(items):
+            if not isinstance(item, dict):
+                continue
+            rules = []
+            for rule in _as_list(item.get("rules", {}).get("rule")):
+                if not isinstance(rule, dict):
+                    continue
+                rules.append(
+                    NATRuleRecord(
+                        sequence=str(rule.get("sequence")),
+                        description=rule.get("description"),
+                        direction=rule.get("direction"),
+                        dynamic=_to_bool(rule.get("dynamic")),
+                        algorithm=rule.get("algorithm"),
+                        match_from_prefix=rule.get("match", {}).get("from", {}).get("ipv4-prefix"),
+                        translation_interface=rule.get("translation", {}).get("if-name"),
+                    )
+                )
+            rulesets.append(
+                NATRulesetRecord(
+                    name=str(item.get("name")),
+                    description=item.get("description"),
+                    rules=rules,
+                )
+            )
+        return rulesets
+
+    def _collect_acl_rulesets(self, config: dict[str, Any]) -> list[ACLRulesetRecord]:
+        rulesets = []
+        items = config.get("vpf-config", {}).get("filter-rulesets", {}).get("ruleset")
+        for item in _as_list(items):
+            if not isinstance(item, dict):
+                continue
+            rules = []
+            for rule in _as_list(item.get("rules", {}).get("rule")):
+                if not isinstance(rule, dict):
+                    continue
+                rules.append(
+                    ACLRuleRecord(
+                        sequence=str(rule.get("sequence")),
+                        description=rule.get("description"),
+                        direction=rule.get("direction"),
+                        ip_version=rule.get("ip-version"),
+                        pass_action=_to_bool(rule.get("pass")),
+                        stateful=_to_bool(rule.get("stateful")),
+                        protocol_set=rule.get("filter", {}).get("protocol-set"),
+                        from_prefix=rule.get("filter", {}).get("from", {}).get("ipv4-prefix"),
+                        to_prefix=rule.get("filter", {}).get("to", {}).get("ipv4-prefix"),
+                    )
+                )
+            rulesets.append(
+                ACLRulesetRecord(
+                    name=str(item.get("name")),
+                    description=item.get("description"),
+                    rules=rules,
+                )
+            )
+        return rulesets
+
+    def _collect_interface_policy_bindings(self, config: dict[str, Any]) -> list[InterfacePolicyBindingRecord]:
+        bindings = []
+        items = config.get("vpf-config", {}).get("options", {}).get("interfaces", {}).get("interface")
+        for item in _as_list(items):
+            if not isinstance(item, dict):
+                continue
+            bindings.append(
+                InterfacePolicyBindingRecord(
+                    interface=str(item.get("if-name")),
+                    nat_ruleset=item.get("nat-ruleset"),
+                    filter_ruleset=item.get("filter-ruleset"),
+                )
+            )
+        return bindings
 
     @staticmethod
     def _extract_ipv4_addresses(interface: dict[str, Any]) -> list[str]:

@@ -117,6 +117,64 @@ class FakeClient:
                         },
                     },
                 },
+                "bfd-config": {
+                    "bfd-table": {
+                        "bfd-session": {
+                            "name": "transit-bfd",
+                            "enable": "true",
+                            "interface": "LAN",
+                            "local-ip-address": "10.0.0.1",
+                            "peer-ip-address": "192.0.2.2",
+                            "desired-min-tx": "500000",
+                            "required-min-rx": "500000",
+                            "detect-multiplier": "3",
+                        }
+                    }
+                },
+                "vpf-config": {
+                    "filter-rulesets": {
+                        "ruleset": {
+                            "name": "LAN-filter",
+                            "description": "Filter rules for LAN",
+                            "rules": {
+                                "rule": {
+                                    "sequence": "10",
+                                    "description": "Permit RFC1918 egress",
+                                    "direction": "out",
+                                    "ip-version": "ipv4",
+                                    "pass": "true",
+                                    "stateful": "true",
+                                    "filter": {"to": {"ipv4-prefix": "10.0.0.0/8"}},
+                                }
+                            },
+                        }
+                    },
+                    "nat-rulesets": {
+                        "ruleset": {
+                            "name": "WAN-nat",
+                            "description": "NAT for WAN",
+                            "rules": {
+                                "rule": {
+                                    "sequence": "1000",
+                                    "description": "Dynamic NAT from RFC1918",
+                                    "direction": "out",
+                                    "dynamic": "true",
+                                    "algorithm": "ip-hash",
+                                    "match": {"from": {"ipv4-prefix": "10.0.0.0/8"}},
+                                    "translation": {"if-name": "WAN"},
+                                }
+                            },
+                        }
+                    },
+                    "options": {
+                        "interfaces": {
+                            "interface": [
+                                {"if-name": "LAN", "filter-ruleset": "LAN-filter"},
+                                {"if-name": "WAN", "nat-ruleset": "WAN-nat", "filter-ruleset": "WAN-filter"},
+                            ]
+                        }
+                    },
+                },
             }
         }
 
@@ -158,3 +216,11 @@ def test_tnsr_collector_normalizes_interfaces_routes_and_bgp():
     assert payload["prefix_lists"][0]["rules"][0]["prefix"] == "0.0.0.0/0"
     assert payload["route_maps"][0]["name"] == "TRANSIT-OUT"
     assert payload["route_maps"][0]["rules"][0]["match_ip_prefix_list"] == "DEFAULT-OUT"
+    assert payload["bfd_sessions"][0]["name"] == "transit-bfd"
+    assert payload["bfd_sessions"][0]["enabled"] is True
+    assert payload["bfd_sessions"][0]["detect_multiplier"] == 3
+    assert payload["nat_rulesets"][0]["name"] == "WAN-nat"
+    assert payload["nat_rulesets"][0]["rules"][0]["match_from_prefix"] == "10.0.0.0/8"
+    assert payload["acl_rulesets"][0]["name"] == "LAN-filter"
+    assert payload["acl_rulesets"][0]["rules"][0]["to_prefix"] == "10.0.0.0/8"
+    assert payload["interface_policy_bindings"][0]["interface"] == "LAN"
