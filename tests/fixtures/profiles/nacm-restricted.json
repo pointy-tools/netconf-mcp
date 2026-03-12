@@ -1,0 +1,40 @@
+{
+  "hello": {
+    "session_id": 102,
+    "framing": "base:1.1",
+    "capabilities": ["urn:ietf:params:netconf:base:1.1", "urn:ietf:params:netconf:capability:with-defaults:1.0:report-all"]
+  },
+  "feature_flags": ["with-defaults"],
+  "nacm": {
+    "mode": "restricted",
+    "denied_paths": ["/interfaces/interface[name='Ethernet1']/mtu"]
+  },
+  "capability_gaps": [],
+  "yang_library": {
+    "module_set": [
+      {"module": "ietf-interfaces", "revision": "2024-07-01", "namespace": "urn:ietf:params:xml:ns:yang:ietf-interfaces"}
+    ],
+    "yang_hashes": {"ietf-interfaces": "sha256:aaa"},
+    "completeness": "complete",
+    "provenance": "ietf-yang-library",
+    "feature_matrix": {
+      "ietf-interfaces": {"with-defaults": ["trim"]}
+    }
+  },
+  "monitoring": {
+    "sessions": [
+      {"session-id": 102, "username": "read-only", "established": "2026-03-12T11:00:00Z"}
+    ],
+    "locks": [],
+    "datastore_health": {"running": "available"},
+    "transport_stats": {"framing": "base:1.1", "reconnects": 0}
+  },
+  "datastores": {
+    "running": {
+      "interfaces": {"interface": {"Ethernet1": {"name": "Ethernet1", "mtu": 1514}}}
+    },
+    "operational": {
+      "interfaces": {"interface": {"Ethernet1": {"name": "Ethernet1", "if-speed": "10G"}}}
+    }
+  }
+}

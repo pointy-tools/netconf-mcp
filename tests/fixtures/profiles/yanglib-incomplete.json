@@ -1,0 +1,40 @@
+{
+  "hello": {
+    "session_id": 103,
+    "framing": "base:1.0",
+    "capabilities": ["urn:ietf:params:netconf:base:1.0", "urn:ietf:params:netconf:capability:candidate:1.0"]
+  },
+  "feature_flags": ["candidate-first"],
+  "nacm": {
+    "mode": "open"
+  },
+  "capability_gaps": ["with-defaults", "yang-library"],
+  "yang_library": {
+    "module_set": [
+      {"module": "ietf-interfaces", "revision": "2024-07-01", "namespace": "urn:ietf:params:xml:ns:yang:ietf-interfaces"}
+    ],
+    "yang_hashes": {"ietf-interfaces": "sha256:bbb"},
+    "completeness": "partial",
+    "provenance": "fallback-monitor",
+    "feature_matrix": {}
+  },
+  "monitoring": {
+    "sessions": [
+      {"session-id": 103, "username": "admin", "established": "2026-03-12T12:00:00Z"}
+    ],
+    "locks": [],
+    "datastore_health": {"running": "available", "candidate": "available"},
+    "transport_stats": {"framing": "base:1.0", "reconnects": 1}
+  },
+  "datastores": {
+    "running": {
+      "interfaces": {"interface": {"MgmtEth0": {"name": "MgmtEth0", "mtu": 1500}}}
+    },
+    "operational": {
+      "system": {"hostname": "rtr-legacy"}
+    },
+    "candidate": {
+      "interfaces": {"interface": {"MgmtEth0": {"name": "MgmtEth0", "mtu": 1500}}}
+    }
+  }
+}

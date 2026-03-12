@@ -1,0 +1,64 @@
+{
+  "targets": [
+    {
+      "target_ref": "target://lab/strict",
+      "name": "strict-rfc6241",
+      "site": "dc-west",
+      "role": ["core"],
+      "status": "online",
+      "safety_state": "ready",
+      "transport": {"protocol": "ssh", "framing": "base:1.1"},
+      "profile": "strict-rfc6241",
+      "credential_ref": "cred://vault/lab/strict",
+      "facts": {"vendor": "mock", "os": "strict-sim"},
+      "capability_profile": "full",
+      "safety_profile": "read-only",
+      "last_seen_utc": "2026-03-12T00:00:00Z"
+    },
+    {
+      "target_ref": "target://lab/nacm",
+      "name": "nacm-restricted",
+      "site": "dc-west",
+      "role": ["edge"],
+      "status": "online",
+      "safety_state": "warning",
+      "transport": {"protocol": "ssh", "framing": "base:1.1"},
+      "profile": "nacm-restricted",
+      "credential_ref": "cred://vault/lab/nacm",
+      "facts": {"vendor": "mock", "os": "nacm-sim"},
+      "capability_profile": "restricted",
+      "safety_profile": "read-only",
+      "last_seen_utc": "2026-03-12T00:00:00Z"
+    },
+    {
+      "target_ref": "target://lab/transport",
+      "name": "transport-fail",
+      "site": "dc-west",
+      "role": ["core"],
+      "status": "offline",
+      "safety_state": "blocked",
+      "transport": {"protocol": "ssh", "framing": "base:1.1"},
+      "profile": "transport-fail",
+      "credential_ref": "cred://vault/lab/transport",
+      "facts": {"vendor": "mock", "os": "down-sim"},
+      "capability_profile": "none",
+      "safety_profile": "blocked",
+      "last_seen_utc": "2026-03-12T00:00:00Z"
+    },
+    {
+      "target_ref": "target://lab/yanglib",
+      "name": "yanglib-incomplete",
+      "site": "dc-west",
+      "role": ["core"],
+      "status": "online",
+      "safety_state": "degraded",
+      "transport": {"protocol": "ssh", "framing": "base:1.1"},
+      "profile": "yanglib-incomplete",
+      "credential_ref": "cred://vault/lab/yanglib",
+      "facts": {"vendor": "mock", "os": "legacy-sim"},
+      "capability_profile": "incomplete",
+      "safety_profile": "read-only",
+      "last_seen_utc": "2026-03-12T00:00:00Z"
+    }
+  ]
+}

@@ -1,0 +1,79 @@
+{
+  "hello": {
+    "session_id": 101,
+    "framing": "base:1.1",
+    "capabilities": [
+      "urn:ietf:params:netconf:base:1.0",
+      "urn:ietf:params:netconf:base:1.1",
+      "urn:ietf:params:netconf:capability:1.0",
+      "urn:ietf:params:netconf:capability:candidate:1.0",
+      "urn:ietf:params:netconf:capability:confirmed-commit:1.0",
+      "urn:ietf:params:netconf:capability:writable-running:1.0",
+      "urn:ietf:params:netconf:capability:with-defaults:1.0:explicit",
+      "urn:ietf:params:netconf:capability:rollback-on-error:1.0",
+      "urn:ietf:params:netconf:capability:yange-lib:1.0"
+    ]
+  },
+  "feature_flags": ["with-defaults", "candidate-first"],
+  "nacm": {
+    "mode": "open"
+  },
+  "capability_gaps": [],
+  "yang_library": {
+    "module_set": [
+      {"module": "ietf-interfaces", "revision": "2024-07-01", "namespace": "urn:ietf:params:xml:ns:yang:ietf-interfaces"},
+      {"module": "ietf-system", "revision": "2023-05-19", "namespace": "urn:ietf:params:xml:ns:yang:ietf-system"}
+    ],
+    "yang_hashes": {
+      "ietf-interfaces": "sha256:abc",
+      "ietf-system": "sha256:def"
+    },
+    "completeness": "complete",
+    "provenance": "ietf-yang-library",
+    "feature_matrix": {
+      "ietf-interfaces": {"with-defaults": ["report-all"]},
+      "ietf-system": {"nacm": ["enabled"]}
+    }
+  },
+  "monitoring": {
+    "sessions": [
+      {"session-id": 101, "username": "admin", "established": "2026-03-12T10:00:00Z"}
+    ],
+    "locks": [],
+    "datastore_health": {
+      "running": "available",
+      "candidate": "available",
+      "startup": "available"
+    },
+    "nacm_observability": {"mode": "open"},
+    "transport_stats": {"framing": "base:1.1", "reconnects": 0}
+  },
+  "datastores": {
+    "running": {
+      "interfaces": {
+        "interface": {
+          "Ethernet1": {"name": "Ethernet1", "mtu": 1514, "description": "edge-agg"},
+          "Ethernet2": {"name": "Ethernet2", "mtu": 9000}
+        }
+      },
+      "system": {"hostname": "rtr-01"}
+    },
+    "operational": {
+      "interfaces": {"interface": {"Ethernet1": {"name": "Ethernet1", "if-speed": "10G"}}}
+    },
+    "candidate": {
+      "interfaces": {
+        "interface": {
+          "Ethernet1": {"name": "Ethernet1", "mtu": 1514, "description": "edge-agg"}
+        }
+      }
+    },
+    "startup": {
+      "system": {"hostname": "rtr-01"}
+    }
+  },
+  "facts": {
+    "platform": "mock",
+    "version": "1.0"
+  }
+}

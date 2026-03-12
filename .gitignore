@@ -1,0 +1,9 @@
+.codex/
+.codex-context-link
+.pytest_cache/
+.temp_apply_test/
+__pycache__/
+*.pyc
+codex-dir
+codex-link
+workflow-context/

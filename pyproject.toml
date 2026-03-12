@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "netconf-mcp"
+version = "0.1.0"
+description = "Read-only fixture-first NETCONF MCP server for v1"
+requires-python = ">=3.12"
+dependencies = [
+  "pydantic>=2.7,<3",
+  "lxml>=5.3,<6",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3,<9",
+  "pytest-asyncio>=0.24,<1",
+]
+
+[project.scripts]
+netconf-mcp = "netconf_mcp.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
