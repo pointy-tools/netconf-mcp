@@ -117,6 +117,13 @@ The snapshot currently normalizes:
 - NETCONF capabilities
 - module inventory
 - interfaces
+- host interface DHCP/client state
+- NETCONF subsystem management config
+- logging remote-server config
+- Prometheus exporter host-space filter config
+- dataplane tuning and DPDK device assignments
+- sysctl settings
+- system kernel-module settings
 - static routes
 - BGP global config and neighbors
 - BGP timers and policy-requirement flags
@@ -140,6 +147,26 @@ By default this writes:
 - `managed-configs/tnsr/<device>.json`: canonical file path the repo can manage over time
 - `proposals/tnsr/<device>.candidate.json`: candidate config rendered from the latest snapshot
 - `proposals/tnsr/<device>.md`: markdown summary plus unified diff against the canonical managed file
+
+For repo review workflows, split mode is often easier to consume:
+
+```bash
+python scripts/tnsr_propose.py \
+  --snapshot tnsr-snapshot.json \
+  --layout split
+```
+
+That layout breaks TNSR config into domain files such as:
+
+- `management/ssh-server.json`
+- `management/host-interfaces.json`
+- `management/logging.json`
+- `management/prometheus-exporter.json`
+- `platform/dataplane.json`
+- `platform/sysctl.json`
+- `platform/system.json`
+- `routing/bgp.json`
+- `security/nat-rulesets.json`
 
 This is the intended near-term loop for TNSR:
 

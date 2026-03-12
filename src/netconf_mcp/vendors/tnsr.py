@@ -39,6 +39,15 @@ class InterfaceRecord:
 
 
 @dataclass
+class HostInterfaceRecord:
+    name: str
+    enabled: bool | None = None
+    ipv4_addresses: list[str] = field(default_factory=list)
+    ipv4_dhcp_client_enabled: bool | None = None
+    ipv6_dhcp_client_enabled: bool | None = None
+
+
+@dataclass
 class StaticRouteRecord:
     table: str
     destination_prefix: str
@@ -143,6 +152,69 @@ class InterfacePolicyBindingRecord:
 
 
 @dataclass
+class SSHServerSnapshot:
+    netconf_enabled: bool | None = None
+    netconf_port: int | None = None
+
+
+@dataclass
+class DataplaneDeviceRecord:
+    name: str
+    pci_id: str | None = None
+    num_rx_queues: int | None = None
+    devargs: str | None = None
+
+
+@dataclass
+class DataplaneSnapshot:
+    buffers_per_numa: int | None = None
+    cpu_main_core: int | None = None
+    cpu_skip_cores: int | None = None
+    cpu_workers: int | None = None
+    dpdk_uio_driver: str | None = None
+    dpdk_devices: list[DataplaneDeviceRecord] = field(default_factory=list)
+    main_heap_size: str | None = None
+    statseg_heap_size: str | None = None
+
+
+@dataclass
+class SysctlRecord:
+    name: str
+    value: str
+
+
+@dataclass
+class SystemKernelModuleRecord:
+    module: str
+    attributes: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class SystemSnapshot:
+    kernel_modules: list[SystemKernelModuleRecord] = field(default_factory=list)
+
+
+@dataclass
+class LoggingRemoteServerRecord:
+    name: str
+    address: str | None = None
+    port: int | None = None
+    transport_protocol: str | None = None
+    facility: str | None = None
+    priority: str | None = None
+
+
+@dataclass
+class LoggingSnapshot:
+    remote_servers: list[LoggingRemoteServerRecord] = field(default_factory=list)
+
+
+@dataclass
+class PrometheusExporterSnapshot:
+    host_space_filter: str | None = None
+
+
+@dataclass
 class BGPSnapshot:
     asn: str | None = None
     router_id: str | None = None
@@ -166,6 +238,7 @@ class TNSRSnapshot:
     capabilities: list[str]
     module_inventory: list[dict[str, Any]]
     interfaces: list[InterfaceRecord]
+    host_interfaces: list[HostInterfaceRecord]
     static_routes: list[StaticRouteRecord]
     bgp: BGPSnapshot
     prefix_lists: list[PrefixListRecord]
@@ -174,6 +247,12 @@ class TNSRSnapshot:
     nat_rulesets: list[NATRulesetRecord]
     acl_rulesets: list[ACLRulesetRecord]
     interface_policy_bindings: list[InterfacePolicyBindingRecord]
+    ssh_server: SSHServerSnapshot
+    dataplane: DataplaneSnapshot
+    sysctl: list[SysctlRecord]
+    system: SystemSnapshot
+    logging: LoggingSnapshot
+    prometheus_exporter: PrometheusExporterSnapshot
     raw_sections: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -200,6 +279,7 @@ class TNSRCollector:
 
         monitoring = self.client.get_monitoring(target, session, scope="all")
         interfaces = self._collect_interfaces(config)
+        host_interfaces = self._collect_host_interfaces(config)
         static_routes = self._collect_static_routes(config)
         bgp = self._collect_bgp(route_config)
         prefix_lists = self._collect_prefix_lists(route_config)
@@ -208,6 +288,12 @@ class TNSRCollector:
         nat_rulesets = self._collect_nat_rulesets(config)
         acl_rulesets = self._collect_acl_rulesets(config)
         interface_policy_bindings = self._collect_interface_policy_bindings(config)
+        ssh_server = self._collect_ssh_server(config)
+        dataplane = self._collect_dataplane(config)
+        sysctl = self._collect_sysctl(config)
+        system = self._collect_system(config)
+        logging = self._collect_logging(config)
+        prometheus_exporter = self._collect_prometheus_exporter(config)
 
         return TNSRSnapshot(
             snapshot_type="tnsr-normalized-config-v1",
@@ -224,6 +310,7 @@ class TNSRCollector:
             capabilities=session.server_capabilities,
             module_inventory=yang_library.get("module_set", []),
             interfaces=interfaces,
+            host_interfaces=host_interfaces,
             static_routes=static_routes,
             bgp=bgp,
             prefix_lists=prefix_lists,
@@ -232,6 +319,12 @@ class TNSRCollector:
             nat_rulesets=nat_rulesets,
             acl_rulesets=acl_rulesets,
             interface_policy_bindings=interface_policy_bindings,
+            ssh_server=ssh_server,
+            dataplane=dataplane,
+            sysctl=sysctl,
+            system=system,
+            logging=logging,
+            prometheus_exporter=prometheus_exporter,
             raw_sections={
                 "config_root_keys": sorted(config.keys()) if isinstance(config, dict) else [],
                 "monitoring_sessions": monitoring.get("sessions", []),
@@ -315,6 +408,23 @@ class TNSRCollector:
                     )
                 )
         return routes
+
+    def _collect_host_interfaces(self, config: dict[str, Any]) -> list[HostInterfaceRecord]:
+        host_interfaces: list[HostInterfaceRecord] = []
+        items = config.get("host-if-config", {}).get("interface")
+        for item in _as_list(items):
+            if not isinstance(item, dict):
+                continue
+            host_interfaces.append(
+                HostInterfaceRecord(
+                    name=str(item.get("name")),
+                    enabled=_to_bool(item.get("enabled")),
+                    ipv4_addresses=self._extract_host_ipv4(item),
+                    ipv4_dhcp_client_enabled=_to_bool(item.get("ipv4", {}).get("dhcp-client", {}).get("enabled")),
+                    ipv6_dhcp_client_enabled=_to_bool(item.get("ipv6", {}).get("dhcp-client", {}).get("enabled")),
+                )
+            )
+        return host_interfaces
 
     def _collect_bgp(self, route_config: dict[str, Any]) -> BGPSnapshot:
         router = route_config.get("dynamic", {}).get("bgp", {}).get("routers", {}).get("router", {})
@@ -518,6 +628,121 @@ class TNSRCollector:
                 )
             )
         return bindings
+
+    def _collect_ssh_server(self, config: dict[str, Any]) -> SSHServerSnapshot:
+        netconf_subsystem = config.get("ssh-server-config", {}).get("host", {}).get("netconf-subsystem", {})
+        if not isinstance(netconf_subsystem, dict):
+            return SSHServerSnapshot()
+        return SSHServerSnapshot(
+            netconf_enabled=_to_bool(netconf_subsystem.get("enable")),
+            netconf_port=_to_int(netconf_subsystem.get("port")),
+        )
+
+    def _collect_dataplane(self, config: dict[str, Any]) -> DataplaneSnapshot:
+        dataplane = config.get("dataplane-config", {})
+        if not isinstance(dataplane, dict):
+            return DataplaneSnapshot()
+
+        dpdk = dataplane.get("dpdk", {})
+        devices: list[DataplaneDeviceRecord] = []
+        for item in _as_list(dpdk.get("dev")):
+            if not isinstance(item, dict):
+                continue
+            devices.append(
+                DataplaneDeviceRecord(
+                    name=str(item.get("name")),
+                    pci_id=item.get("id"),
+                    num_rx_queues=_to_int(item.get("num-rx-queues")),
+                    devargs=item.get("devargs"),
+                )
+            )
+
+        return DataplaneSnapshot(
+            buffers_per_numa=_to_int(dataplane.get("buffers-per-numa")),
+            cpu_main_core=_to_int(dataplane.get("cpu", {}).get("main-core")),
+            cpu_skip_cores=_to_int(dataplane.get("cpu", {}).get("skip-cores")),
+            cpu_workers=_to_int(dataplane.get("cpu", {}).get("workers")),
+            dpdk_uio_driver=dpdk.get("uio-driver"),
+            dpdk_devices=devices,
+            main_heap_size=dataplane.get("memory", {}).get("main-heap-size"),
+            statseg_heap_size=dataplane.get("statseg", {}).get("heap-size"),
+        )
+
+    def _collect_sysctl(self, config: dict[str, Any]) -> list[SysctlRecord]:
+        sysctl = config.get("sysctl-config", {})
+        if not isinstance(sysctl, dict):
+            return []
+        records: list[SysctlRecord] = []
+
+        def walk(prefix: str, value: Any) -> None:
+            if isinstance(value, dict):
+                for key in sorted(value):
+                    child_prefix = f"{prefix}.{key}" if prefix else str(key)
+                    walk(child_prefix, value[key])
+                return
+            if value is not None:
+                records.append(SysctlRecord(name=prefix, value=str(value)))
+
+        walk("", sysctl)
+        return records
+
+    def _collect_system(self, config: dict[str, Any]) -> SystemSnapshot:
+        system = config.get("system", {})
+        if not isinstance(system, dict):
+            return SystemSnapshot()
+
+        modules = []
+        kernel_modules = system.get("kernel", {}).get("modules", {})
+        if isinstance(kernel_modules, dict):
+            for module_name in sorted(kernel_modules):
+                module_data = kernel_modules[module_name]
+                if isinstance(module_data, dict):
+                    attributes = {
+                        str(key): str(value)
+                        for key, value in sorted(module_data.items())
+                        if value is not None
+                    }
+                else:
+                    attributes = {"value": str(module_data)}
+                modules.append(
+                    SystemKernelModuleRecord(
+                        module=str(module_name),
+                        attributes=attributes,
+                    )
+                )
+
+        return SystemSnapshot(kernel_modules=modules)
+
+    def _collect_logging(self, config: dict[str, Any]) -> LoggingSnapshot:
+        logging = config.get("logging-config", {})
+        if not isinstance(logging, dict):
+            return LoggingSnapshot()
+
+        servers = []
+        items = logging.get("remote-servers", {}).get("remote-server")
+        for item in _as_list(items):
+            if not isinstance(item, dict):
+                continue
+            filter_data = item.get("filter", {})
+            servers.append(
+                LoggingRemoteServerRecord(
+                    name=str(item.get("name")),
+                    address=item.get("address"),
+                    port=_to_int(item.get("port")),
+                    transport_protocol=item.get("transport-protocol"),
+                    facility=filter_data.get("facility") if isinstance(filter_data, dict) else None,
+                    priority=filter_data.get("priority") if isinstance(filter_data, dict) else None,
+                )
+            )
+        return LoggingSnapshot(remote_servers=servers)
+
+    def _collect_prometheus_exporter(self, config: dict[str, Any]) -> PrometheusExporterSnapshot:
+        exporter = config.get("prometheus-exporter", {})
+        if not isinstance(exporter, dict):
+            return PrometheusExporterSnapshot()
+        return PrometheusExporterSnapshot(
+            host_space_filter=exporter.get("host-space", {}).get("filters", {}).get("filter"),
+        )
 
     @staticmethod
     def _extract_ipv4_addresses(interface: dict[str, Any]) -> list[str]:

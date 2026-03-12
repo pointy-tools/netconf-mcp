@@ -29,6 +29,77 @@ class FakeClient:
                     "interface": {
                         "name": "eth0",
                         "enabled": "true",
+                        "ipv4": {"dhcp-client": {"enabled": "true"}},
+                        "ipv6": {"dhcp-client": {"enabled": "false"}},
+                    }
+                },
+                "ssh-server-config": {
+                    "host": {
+                        "netconf-subsystem": {
+                            "enable": "true",
+                            "port": "830",
+                        }
+                    }
+                },
+                "dataplane-config": {
+                    "buffers-per-numa": "131070",
+                    "cpu": {
+                        "main-core": "1",
+                        "skip-cores": "1",
+                        "workers": "6",
+                    },
+                    "dpdk": {
+                        "uio-driver": "vfio-pci",
+                        "dev": [
+                            {
+                                "name": "WAN",
+                                "id": "0000:28:00.0",
+                                "num-rx-queues": "6",
+                                "devargs": "llq_policy=1",
+                            },
+                            {
+                                "name": "LAN",
+                                "id": "0000:29:00.0",
+                                "num-rx-queues": "6",
+                                "devargs": "llq_policy=1",
+                            },
+                        ],
+                    },
+                    "memory": {"main-heap-size": "8g"},
+                    "statseg": {"heap-size": "2g"},
+                },
+                "sysctl-config": {
+                    "kernel": {"shmmax": "2147483648"},
+                    "vm": {"max_map_count": "65530"},
+                },
+                "system": {
+                    "kernel": {
+                        "modules": {
+                            "vfio": {
+                                "noiommu": "true",
+                            }
+                        }
+                    }
+                },
+                "logging-config": {
+                    "remote-servers": {
+                        "remote-server": {
+                            "name": "localhost",
+                            "address": "127.0.0.1",
+                            "port": "10010",
+                            "transport-protocol": "udp",
+                            "filter": {
+                                "facility": "all",
+                                "priority": "warning",
+                            },
+                        }
+                    }
+                },
+                "prometheus-exporter": {
+                    "host-space": {
+                        "filters": {
+                            "filter": "v2 ^/sys/heartbeat ^/interfaces/",
+                        }
                     }
                 },
                 "interfaces-config": {
@@ -201,6 +272,9 @@ def test_tnsr_collector_normalizes_interfaces_routes_and_bgp():
     assert payload["device"]["vendor"] == "netgate"
     assert [item["name"] for item in payload["interfaces"]] == ["eth0", "LAN", "WAN"]
     assert payload["interfaces"][1]["ipv4_addresses"] == ["10.0.0.1/24"]
+    assert payload["host_interfaces"][0]["name"] == "eth0"
+    assert payload["host_interfaces"][0]["ipv4_dhcp_client_enabled"] is True
+    assert payload["host_interfaces"][0]["ipv6_dhcp_client_enabled"] is False
     assert payload["static_routes"][0]["destination_prefix"] == "0.0.0.0/0"
     assert payload["static_routes"][0]["interface"] == "WAN"
     assert payload["bgp"]["asn"] == "65001"
@@ -224,3 +298,13 @@ def test_tnsr_collector_normalizes_interfaces_routes_and_bgp():
     assert payload["acl_rulesets"][0]["name"] == "LAN-filter"
     assert payload["acl_rulesets"][0]["rules"][0]["to_prefix"] == "10.0.0.0/8"
     assert payload["interface_policy_bindings"][0]["interface"] == "LAN"
+    assert payload["ssh_server"]["netconf_enabled"] is True
+    assert payload["ssh_server"]["netconf_port"] == 830
+    assert payload["dataplane"]["cpu_workers"] == 6
+    assert payload["dataplane"]["dpdk_devices"][0]["name"] == "WAN"
+    assert payload["sysctl"][0]["name"] == "kernel.shmmax"
+    assert payload["system"]["kernel_modules"][0]["module"] == "vfio"
+    assert payload["system"]["kernel_modules"][0]["attributes"]["noiommu"] == "true"
+    assert payload["logging"]["remote_servers"][0]["name"] == "localhost"
+    assert payload["logging"]["remote_servers"][0]["port"] == 10010
+    assert payload["prometheus_exporter"]["host_space_filter"] == "v2 ^/sys/heartbeat ^/interfaces/"

@@ -13,15 +13,25 @@ from netconf_mcp.vendors.tnsr import (
     BFDSessionRecord,
     BGPNeighborRecord,
     BGPSnapshot,
+    DataplaneDeviceRecord,
+    DataplaneSnapshot,
+    HostInterfaceRecord,
     InterfaceRecord,
     InterfacePolicyBindingRecord,
+    LoggingRemoteServerRecord,
+    LoggingSnapshot,
     NATRuleRecord,
     NATRulesetRecord,
     PrefixListRecord,
     PrefixListRuleRecord,
+    PrometheusExporterSnapshot,
     RouteMapRecord,
     RouteMapRuleRecord,
+    SSHServerSnapshot,
     StaticRouteRecord,
+    SysctlRecord,
+    SystemKernelModuleRecord,
+    SystemSnapshot,
     TNSRSnapshot,
 )
 
@@ -68,6 +78,20 @@ def build_managed_tnsr_config(snapshot: TNSRSnapshot) -> dict[str, Any]:
             for item in snapshot.interfaces
         ),
         key=lambda item: (item["kind"], item["name"]),
+    )
+
+    host_interfaces = sorted(
+        (
+            {
+                "name": item.name,
+                "enabled": item.enabled,
+                "ipv4_addresses": _sorted_unique(item.ipv4_addresses),
+                "ipv4_dhcp_client_enabled": item.ipv4_dhcp_client_enabled,
+                "ipv6_dhcp_client_enabled": item.ipv6_dhcp_client_enabled,
+            }
+            for item in snapshot.host_interfaces
+        ),
+        key=lambda item: item["name"],
     )
 
     static_routes = sorted(
@@ -214,6 +238,53 @@ def build_managed_tnsr_config(snapshot: TNSRSnapshot) -> dict[str, Any]:
         key=lambda item: item["interface"],
     )
 
+    dataplane_devices = sorted(
+        (
+            {
+                "name": item.name,
+                "pci_id": item.pci_id,
+                "num_rx_queues": item.num_rx_queues,
+                "devargs": item.devargs,
+            }
+            for item in snapshot.dataplane.dpdk_devices
+        ),
+        key=lambda item: item["name"],
+    )
+
+    sysctl_settings = [
+        {
+            "name": item.name,
+            "value": item.value,
+        }
+        for item in sorted(snapshot.sysctl, key=lambda item: item.name)
+    ]
+
+    kernel_modules = sorted(
+        (
+            {
+                "module": item.module,
+                "attributes": dict(sorted(item.attributes.items())),
+            }
+            for item in snapshot.system.kernel_modules
+        ),
+        key=lambda item: item["module"],
+    )
+
+    logging_remote_servers = sorted(
+        (
+            {
+                "name": item.name,
+                "address": item.address,
+                "port": item.port,
+                "transport_protocol": item.transport_protocol,
+                "facility": item.facility,
+                "priority": item.priority,
+            }
+            for item in snapshot.logging.remote_servers
+        ),
+        key=lambda item: item["name"],
+    )
+
     capabilities = _sorted_unique(snapshot.capabilities)
     module_inventory = sorted(
         (
@@ -239,6 +310,35 @@ def build_managed_tnsr_config(snapshot: TNSRSnapshot) -> dict[str, Any]:
         },
         "config": {
             "interfaces": interfaces,
+            "management": {
+                "ssh_server": {
+                    "netconf_enabled": snapshot.ssh_server.netconf_enabled,
+                    "netconf_port": snapshot.ssh_server.netconf_port,
+                },
+                "host_interfaces": host_interfaces,
+                "logging": {
+                    "remote_servers": logging_remote_servers,
+                },
+                "prometheus_exporter": {
+                    "host_space_filter": snapshot.prometheus_exporter.host_space_filter,
+                },
+            },
+            "platform": {
+                "dataplane": {
+                    "buffers_per_numa": snapshot.dataplane.buffers_per_numa,
+                    "cpu_main_core": snapshot.dataplane.cpu_main_core,
+                    "cpu_skip_cores": snapshot.dataplane.cpu_skip_cores,
+                    "cpu_workers": snapshot.dataplane.cpu_workers,
+                    "dpdk_uio_driver": snapshot.dataplane.dpdk_uio_driver,
+                    "dpdk_devices": dataplane_devices,
+                    "main_heap_size": snapshot.dataplane.main_heap_size,
+                    "statseg_heap_size": snapshot.dataplane.statseg_heap_size,
+                },
+                "sysctl": sysctl_settings,
+                "system": {
+                    "kernel_modules": kernel_modules,
+                },
+            },
             "routing": {
                 "static_routes": static_routes,
             },
@@ -297,6 +397,27 @@ def build_split_managed_tnsr_files(
         "interfaces.json": {
             "interfaces": candidate_config["config"]["interfaces"],
         },
+        "management/ssh-server.json": {
+            "ssh_server": candidate_config["config"]["management"]["ssh_server"],
+        },
+        "management/host-interfaces.json": {
+            "host_interfaces": candidate_config["config"]["management"]["host_interfaces"],
+        },
+        "management/logging.json": {
+            "logging": candidate_config["config"]["management"]["logging"],
+        },
+        "management/prometheus-exporter.json": {
+            "prometheus_exporter": candidate_config["config"]["management"]["prometheus_exporter"],
+        },
+        "platform/dataplane.json": {
+            "dataplane": candidate_config["config"]["platform"]["dataplane"],
+        },
+        "platform/sysctl.json": {
+            "sysctl": candidate_config["config"]["platform"]["sysctl"],
+        },
+        "platform/system.json": {
+            "system": candidate_config["config"]["platform"]["system"],
+        },
         "routing/static-routes.json": {
             "static_routes": candidate_config["config"]["routing"]["static_routes"],
         },
@@ -348,6 +469,16 @@ def build_managed_tnsr_config_from_payload(payload: dict[str, Any]) -> dict[str,
                 ipv4_addresses=list(item.get("ipv4_addresses", [])),
             )
             for item in payload.get("interfaces", [])
+        ],
+        host_interfaces=[
+            HostInterfaceRecord(
+                name=item["name"],
+                enabled=item.get("enabled"),
+                ipv4_addresses=list(item.get("ipv4_addresses", [])),
+                ipv4_dhcp_client_enabled=item.get("ipv4_dhcp_client_enabled"),
+                ipv6_dhcp_client_enabled=item.get("ipv6_dhcp_client_enabled"),
+            )
+            for item in payload.get("host_interfaces", [])
         ],
         static_routes=[
             StaticRouteRecord(
@@ -473,6 +604,60 @@ def build_managed_tnsr_config_from_payload(payload: dict[str, Any]) -> dict[str,
             )
             for item in payload.get("interface_policy_bindings", [])
         ],
+        ssh_server=SSHServerSnapshot(
+            netconf_enabled=payload.get("ssh_server", {}).get("netconf_enabled"),
+            netconf_port=payload.get("ssh_server", {}).get("netconf_port"),
+        ),
+        dataplane=DataplaneSnapshot(
+            buffers_per_numa=payload.get("dataplane", {}).get("buffers_per_numa"),
+            cpu_main_core=payload.get("dataplane", {}).get("cpu_main_core"),
+            cpu_skip_cores=payload.get("dataplane", {}).get("cpu_skip_cores"),
+            cpu_workers=payload.get("dataplane", {}).get("cpu_workers"),
+            dpdk_uio_driver=payload.get("dataplane", {}).get("dpdk_uio_driver"),
+            dpdk_devices=[
+                DataplaneDeviceRecord(
+                    name=item["name"],
+                    pci_id=item.get("pci_id"),
+                    num_rx_queues=item.get("num_rx_queues"),
+                    devargs=item.get("devargs"),
+                )
+                for item in payload.get("dataplane", {}).get("dpdk_devices", [])
+            ],
+            main_heap_size=payload.get("dataplane", {}).get("main_heap_size"),
+            statseg_heap_size=payload.get("dataplane", {}).get("statseg_heap_size"),
+        ),
+        sysctl=[
+            SysctlRecord(
+                name=item["name"],
+                value=item["value"],
+            )
+            for item in payload.get("sysctl", [])
+        ],
+        system=SystemSnapshot(
+            kernel_modules=[
+                SystemKernelModuleRecord(
+                    module=item["module"],
+                    attributes=dict(item.get("attributes", {})),
+                )
+                for item in payload.get("system", {}).get("kernel_modules", [])
+            ],
+        ),
+        logging=LoggingSnapshot(
+            remote_servers=[
+                LoggingRemoteServerRecord(
+                    name=item["name"],
+                    address=item.get("address"),
+                    port=item.get("port"),
+                    transport_protocol=item.get("transport_protocol"),
+                    facility=item.get("facility"),
+                    priority=item.get("priority"),
+                )
+                for item in payload.get("logging", {}).get("remote_servers", [])
+            ],
+        ),
+        prometheus_exporter=PrometheusExporterSnapshot(
+            host_space_filter=payload.get("prometheus_exporter", {}).get("host_space_filter"),
+        ),
         raw_sections=dict(payload.get("raw_sections", {})),
     )
     return build_managed_tnsr_config(snapshot)
@@ -480,6 +665,7 @@ def build_managed_tnsr_config_from_payload(payload: dict[str, Any]) -> dict[str,
 
 def _proposal_summary(existing: dict[str, Any] | None, candidate: dict[str, Any]) -> list[str]:
     current_interfaces = len(existing.get("config", {}).get("interfaces", [])) if existing else 0
+    current_host_interfaces = len(existing.get("config", {}).get("management", {}).get("host_interfaces", [])) if existing else 0
     current_routes = len(existing.get("config", {}).get("routing", {}).get("static_routes", [])) if existing else 0
     current_neighbors = len(existing.get("config", {}).get("bgp", {}).get("neighbors", [])) if existing else 0
     current_prefix_lists = len(existing.get("config", {}).get("routing_policy", {}).get("prefix_lists", [])) if existing else 0
@@ -487,8 +673,12 @@ def _proposal_summary(existing: dict[str, Any] | None, candidate: dict[str, Any]
     current_bfd_sessions = len(existing.get("config", {}).get("bfd", {}).get("sessions", [])) if existing else 0
     current_nat_rulesets = len(existing.get("config", {}).get("nat", {}).get("rulesets", [])) if existing else 0
     current_acl_rulesets = len(existing.get("config", {}).get("acl", {}).get("rulesets", [])) if existing else 0
+    current_sysctl = len(existing.get("config", {}).get("platform", {}).get("sysctl", [])) if existing else 0
+    current_kernel_modules = len(existing.get("config", {}).get("platform", {}).get("system", {}).get("kernel_modules", [])) if existing else 0
+    current_logging_servers = len(existing.get("config", {}).get("management", {}).get("logging", {}).get("remote_servers", [])) if existing else 0
 
     candidate_interfaces = len(candidate["config"]["interfaces"])
+    candidate_host_interfaces = len(candidate["config"]["management"]["host_interfaces"])
     candidate_routes = len(candidate["config"]["routing"]["static_routes"])
     candidate_neighbors = len(candidate["config"]["bgp"]["neighbors"])
     candidate_prefix_lists = len(candidate["config"]["routing_policy"]["prefix_lists"])
@@ -496,10 +686,14 @@ def _proposal_summary(existing: dict[str, Any] | None, candidate: dict[str, Any]
     candidate_bfd_sessions = len(candidate["config"]["bfd"]["sessions"])
     candidate_nat_rulesets = len(candidate["config"]["nat"]["rulesets"])
     candidate_acl_rulesets = len(candidate["config"]["acl"]["rulesets"])
+    candidate_sysctl = len(candidate["config"]["platform"]["sysctl"])
+    candidate_kernel_modules = len(candidate["config"]["platform"]["system"]["kernel_modules"])
+    candidate_logging_servers = len(candidate["config"]["management"]["logging"]["remote_servers"])
 
     return [
         f"Managed file: {'update' if existing else 'create'}",
         f"Interfaces: {current_interfaces} -> {candidate_interfaces}",
+        f"Host interfaces: {current_host_interfaces} -> {candidate_host_interfaces}",
         f"Static routes: {current_routes} -> {candidate_routes}",
         f"BGP neighbors: {current_neighbors} -> {candidate_neighbors}",
         f"Prefix lists: {current_prefix_lists} -> {candidate_prefix_lists}",
@@ -507,6 +701,9 @@ def _proposal_summary(existing: dict[str, Any] | None, candidate: dict[str, Any]
         f"BFD sessions: {current_bfd_sessions} -> {candidate_bfd_sessions}",
         f"NAT rulesets: {current_nat_rulesets} -> {candidate_nat_rulesets}",
         f"ACL rulesets: {current_acl_rulesets} -> {candidate_acl_rulesets}",
+        f"Sysctl settings: {current_sysctl} -> {candidate_sysctl}",
+        f"Kernel modules: {current_kernel_modules} -> {candidate_kernel_modules}",
+        f"Logging servers: {current_logging_servers} -> {candidate_logging_servers}",
     ]
 
 

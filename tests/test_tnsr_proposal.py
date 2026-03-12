@@ -37,6 +37,15 @@ def _sample_snapshot_payload() -> dict:
             {"name": "LAN", "kind": "dataplane", "enabled": True, "description": "lan-uplink", "ipv4_addresses": ["10.0.0.1/24"]},
             {"name": "eth0", "kind": "host", "enabled": True, "description": None, "ipv4_addresses": []},
         ],
+        "host_interfaces": [
+            {
+                "name": "eth0",
+                "enabled": True,
+                "ipv4_addresses": [],
+                "ipv4_dhcp_client_enabled": True,
+                "ipv6_dhcp_client_enabled": True,
+            }
+        ],
         "static_routes": [
             {"table": "default", "destination_prefix": "0.0.0.0/0", "next_hop": "192.0.2.0", "interface": "WAN"}
         ],
@@ -118,6 +127,47 @@ def _sample_snapshot_payload() -> dict:
             {"interface": "LAN", "nat_ruleset": None, "filter_ruleset": "LAN-filter"},
             {"interface": "WAN", "nat_ruleset": "WAN-nat", "filter_ruleset": "WAN-filter"},
         ],
+        "ssh_server": {
+            "netconf_enabled": True,
+            "netconf_port": 830,
+        },
+        "logging": {
+            "remote_servers": [
+                {
+                    "name": "localhost",
+                    "address": "127.0.0.1",
+                    "port": 10010,
+                    "transport_protocol": "udp",
+                    "facility": "all",
+                    "priority": "warning",
+                }
+            ]
+        },
+        "prometheus_exporter": {
+            "host_space_filter": "v2 ^/sys/heartbeat ^/interfaces/",
+        },
+        "dataplane": {
+            "buffers_per_numa": 131070,
+            "cpu_main_core": 1,
+            "cpu_skip_cores": 1,
+            "cpu_workers": 6,
+            "dpdk_uio_driver": "vfio-pci",
+            "dpdk_devices": [
+                {"name": "WAN", "pci_id": "0000:28:00.0", "num_rx_queues": 6, "devargs": "llq_policy=1"},
+                {"name": "LAN", "pci_id": "0000:29:00.0", "num_rx_queues": 6, "devargs": "llq_policy=1"},
+            ],
+            "main_heap_size": "8g",
+            "statseg_heap_size": "2g",
+        },
+        "sysctl": [
+            {"name": "kernel.shmmax", "value": "2147483648"},
+            {"name": "vm.max_map_count", "value": "65530"},
+        ],
+        "system": {
+            "kernel_modules": [
+                {"module": "vfio", "attributes": {"noiommu": "true"}}
+            ]
+        },
         "raw_sections": {"config_root_keys": ["interfaces-config"]},
     }
 
@@ -128,6 +178,14 @@ def test_build_managed_tnsr_config_from_payload_normalizes_and_sorts():
     assert managed["schema_version"] == "tnsr-managed-config-v1"
     assert managed["device"]["name"] == "tnsr-lab"
     assert [item["name"] for item in managed["config"]["interfaces"]] == ["LAN", "WAN", "eth0"]
+    assert managed["config"]["management"]["ssh_server"]["netconf_enabled"] is True
+    assert managed["config"]["management"]["host_interfaces"][0]["name"] == "eth0"
+    assert managed["config"]["management"]["logging"]["remote_servers"][0]["name"] == "localhost"
+    assert managed["config"]["management"]["prometheus_exporter"]["host_space_filter"] == "v2 ^/sys/heartbeat ^/interfaces/"
+    assert managed["config"]["platform"]["dataplane"]["cpu_workers"] == 6
+    assert managed["config"]["platform"]["dataplane"]["dpdk_devices"][0]["name"] == "LAN"
+    assert managed["config"]["platform"]["sysctl"][0]["name"] == "kernel.shmmax"
+    assert managed["config"]["platform"]["system"]["kernel_modules"][0]["module"] == "vfio"
     assert managed["config"]["routing"]["static_routes"][0]["destination_prefix"] == "0.0.0.0/0"
     assert managed["config"]["bgp"]["neighbors"][0]["peer"] == "192.0.2.2"
     assert managed["config"]["bgp"]["ebgp_requires_policy"] is True
@@ -159,6 +217,10 @@ def test_build_tnsr_proposal_artifacts_reports_create_when_managed_file_missing(
     assert "BFD sessions: 0 -> 1" in proposal_text
     assert "NAT rulesets: 0 -> 1" in proposal_text
     assert "ACL rulesets: 0 -> 1" in proposal_text
+    assert "Host interfaces: 0 -> 1" in proposal_text
+    assert "Sysctl settings: 0 -> 2" in proposal_text
+    assert "Kernel modules: 0 -> 1" in proposal_text
+    assert "Logging servers: 0 -> 1" in proposal_text
     candidate = json.loads(candidate_text)
     assert candidate["config"]["bgp"]["asn"] == "65001"
 
@@ -173,6 +235,13 @@ def test_build_tnsr_proposal_artifacts_shows_update_diff(tmp_path: Path):
                 "device": {"name": "tnsr-lab"},
                 "config": {
                     "interfaces": [],
+                    "management": {
+                        "ssh_server": {"netconf_enabled": None, "netconf_port": None},
+                        "host_interfaces": [],
+                        "logging": {"remote_servers": []},
+                        "prometheus_exporter": {"host_space_filter": None},
+                    },
+                    "platform": {"dataplane": {"dpdk_devices": []}, "sysctl": [], "system": {"kernel_modules": []}},
                     "routing": {"static_routes": []},
                     "bgp": {"asn": None, "router_id": None, "neighbors": [], "network_announcements": []},
                     "routing_policy": {"prefix_lists": [], "route_maps": []},
@@ -210,6 +279,13 @@ def test_build_split_managed_tnsr_files_groups_by_domain():
 
     assert "device.json" in files
     assert "interfaces.json" in files
+    assert "management/ssh-server.json" in files
+    assert "management/host-interfaces.json" in files
+    assert "management/logging.json" in files
+    assert "management/prometheus-exporter.json" in files
+    assert "platform/dataplane.json" in files
+    assert "platform/sysctl.json" in files
+    assert "platform/system.json" in files
     assert "routing/bgp.json" in files
     assert "routing/prefix-lists.json" in files
     assert "services/bfd.json" in files
@@ -219,6 +295,10 @@ def test_build_split_managed_tnsr_files_groups_by_domain():
     assert "observed-state.json" not in files
     assert "\"name\": \"WAN-nat\"" in files["security/nat-rulesets.json"]
     assert "\"name\": \"LAN-filter\"" in files["security/acl-rulesets.json"]
+    assert "\"netconf_port\": 830" in files["management/ssh-server.json"]
+    assert "\"localhost\"" in files["management/logging.json"]
+    assert "\"cpu_workers\": 6" in files["platform/dataplane.json"]
+    assert "\"vfio\"" in files["platform/system.json"]
 
 
 def test_build_split_managed_tnsr_files_can_include_observed_state():
@@ -244,3 +324,7 @@ def test_build_split_tnsr_proposal_index_reports_per_file_create(tmp_path: Path)
     assert "Action: `create`" in proposal_text
     assert "security/nat-rulesets.json" in proposal_text
     assert "services/bfd.json" in proposal_text
+    assert "management/ssh-server.json" in proposal_text
+    assert "management/logging.json" in proposal_text
+    assert "platform/dataplane.json" in proposal_text
+    assert "platform/system.json" in proposal_text
