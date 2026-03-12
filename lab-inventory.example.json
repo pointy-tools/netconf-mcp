@@ -3,7 +3,7 @@
     {
       "target_ref": "target://lab/tnsr",
       "name": "tnsr-lab",
-      "site": "use1-az2",
+      "site": "example-site",
       "role": [
         "edge"
       ],
@@ -14,9 +14,9 @@
         "protocol": "ssh",
         "framing": "base:1.0"
       },
-      "host": "use1-az2.magnat.iad.magnite-core-dev.com",
+      "host": "tnsr.example.net",
       "port": 830,
-      "username": "tnsr",
+      "username": "netops",
       "facts": {
         "vendor": "netgate",
         "os": "tnsr"

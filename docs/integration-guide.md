@@ -14,6 +14,12 @@ All inputs are fixture-driven under `tests/fixtures`.
 
 You can point the server at a separate inventory file for lab-device testing:
 
+Start by copying the example inventory and filling in your own lab details:
+
+```bash
+cp lab-inventory.example.json lab-inventory.json
+```
+
 ```bash
 NETCONF_MCP_INVENTORY=lab-inventory.json python -m netconf_mcp.cli
 ```

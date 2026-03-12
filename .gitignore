@@ -8,3 +8,5 @@ codex-dir
 codex-link
 workflow-context/
 /proposals/
+lab-inventory.json
+out*.txt

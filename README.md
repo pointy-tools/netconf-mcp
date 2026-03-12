@@ -1,6 +1,6 @@
 # netconf-mcp
 
-Fixture-first NETCONF MCP server for local agent workflows.
+Fixture-first NETCONF MCP server for read-oriented network automation workflows.
 
 ## Current scope
 
@@ -12,6 +12,18 @@ This repository currently implements a local Python MCP server with:
 - fixture-backed target profiles for happy-path and failure-path testing
 
 The current implementation is designed for safe local development, not direct production device access yet.
+
+## What this is
+
+- an MCP server for structured NETCONF reads
+- a safe read/propose workflow for network source-of-truth repos
+- a TNSR-first implementation with fixture-backed tests and live read-only validation
+
+## What this is not
+
+- a production-hardened write engine
+- a credential-management system
+- a complete multi-vendor platform yet
 
 ## Implemented tool surface
 
@@ -35,12 +47,12 @@ Guarded write workflow:
 
 ## Project layout
 
-- [`src/netconf_mcp`](/Users/rdw/src/netconf-mcp/src/netconf_mcp): package code
-- [`tests`](/Users/rdw/src/netconf-mcp/tests): integration tests and fixture inventory
-- [`docs/architecture.md`](/Users/rdw/src/netconf-mcp/docs/architecture.md): architecture notes
-- [`docs/integration-guide.md`](/Users/rdw/src/netconf-mcp/docs/integration-guide.md): quick local flow
-- [`docs/safe-operations.md`](/Users/rdw/src/netconf-mcp/docs/safe-operations.md): safety rules
-- [`docs/vendors.md`](/Users/rdw/src/netconf-mcp/docs/vendors.md): vendor/interoperability notes
+- `src/netconf_mcp`: package code
+- `tests`: integration tests and fixture inventory
+- [`docs/architecture.md`](docs/architecture.md): architecture notes
+- [`docs/integration-guide.md`](docs/integration-guide.md): quick local flow
+- [`docs/safe-operations.md`](docs/safe-operations.md): safety rules
+- [`docs/vendors.md`](docs/vendors.md): vendor/interoperability notes
 
 ## Quick start
 
@@ -62,7 +74,13 @@ Run the local server entrypoint:
 python -m netconf_mcp.cli
 ```
 
-The current CLI uses fixture data under [`tests/fixtures`](/Users/rdw/src/netconf-mcp/tests/fixtures).
+The current CLI uses fixture data under `tests/fixtures`.
+
+For live lab testing, start from the example inventory:
+
+```bash
+cp lab-inventory.example.json lab-inventory.json
+```
 
 ## Status
 
@@ -79,6 +97,7 @@ What is working now:
 - expanded TNSR routing-policy coverage for prefix-lists and route-maps
 - TNSR BFD session coverage in snapshot and proposal outputs
 - TNSR NAT and VPF filter-ruleset coverage for source-of-truth proposals
+- TNSR-specific MCP domain views for compact policy/config questions
 
 What is still intentionally deferred:
 
@@ -90,7 +109,7 @@ What is still intentionally deferred:
 
 ## Notes
 
-This repository also contains workflow-generated planning artifacts under ignored local workflow paths. The repo root README is intentionally focused on the implemented project rather than the internal planning prompt that produced it.
+This repository may use ignored local workflow artifacts during development. Public repository content is intended to stay focused on the project itself.
 
 ## Data Fidelity
 
