@@ -68,6 +68,9 @@ class NetconfMCPServer:
         self.fixture_root = Path(fixture_root)
         self.engine = NetconfReadEngine(self.fixture_root, inventory_path=inventory_path, live_client=live_client)
         self.server = FastMCP("netconf-mcp")
+        self._tools: dict[str, Any] = {}
+        self._resources: dict[str, Any] = {}
+        self._prompts: dict[str, Any] = {}
         self.manifest = MCPManifest(
             tools=list(READ_ONLY_TOOLSET) + list(GUARDED_WRITE_TOOLSET),
             resources=list(READ_ONLY_RESOURCE_URIS),
@@ -75,8 +78,32 @@ class NetconfMCPServer:
         )
         self._register_handlers()
 
+    def _tool(self, name: str):
+        def decorator(fn):
+            registered = self.server.tool(name)(fn)
+            self._tools[name] = registered
+            return registered
+
+        return decorator
+
+    def _resource(self, uri: str):
+        def decorator(fn):
+            registered = self.server.resource(uri)(fn)
+            self._resources[uri] = registered
+            return registered
+
+        return decorator
+
+    def _prompt(self, name: str):
+        def decorator(fn):
+            registered = self.server.prompt(name)(fn)
+            self._prompts[name] = registered
+            return registered
+
+        return decorator
+
     def _register_handlers(self) -> None:
-        @self.server.tool("inventory.list_targets")
+        @self._tool("inventory.list_targets")
         def _inventory_list_targets(arguments: dict[str, Any] | None = None):
             """List available targets and basic facts without inferring anything beyond returned fields."""
             arguments = arguments or {}
@@ -92,7 +119,7 @@ class NetconfMCPServer:
                 payload,
             )
 
-        @self.server.tool("netconf.open_session")
+        @self._tool("netconf.open_session")
         def _open_session(arguments: dict[str, Any] | None = None):
             """Open a NETCONF session for a target before issuing reads or guarded workflow operations."""
             arguments = arguments or {}
@@ -119,7 +146,7 @@ class NetconfMCPServer:
                 payload,
             )
 
-        @self.server.tool("netconf.discover_capabilities")
+        @self._tool("netconf.discover_capabilities")
         def _discover_capabilities(arguments: dict[str, Any] | None = None):
             """Return advertised NETCONF capabilities; callers should quote capability strings verbatim."""
             arguments = arguments or {}
@@ -141,7 +168,7 @@ class NetconfMCPServer:
                 session_ref=request["session_ref"],
             )
 
-        @self.server.tool("yang.get_library")
+        @self._tool("yang.get_library")
         def _get_library(arguments: dict[str, Any] | None = None):
             """Return YANG library/module inventory; callers should report module names and revisions exactly as returned."""
             arguments = arguments or {}
@@ -172,7 +199,7 @@ class NetconfMCPServer:
                 )
             return envelope
 
-        @self.server.tool("netconf.get_monitoring")
+        @self._tool("netconf.get_monitoring")
         def _monitoring(arguments: dict[str, Any] | None = None):
             """Return NETCONF monitoring data; summarize conservatively and preserve returned identifiers verbatim."""
             arguments = arguments or {}
@@ -198,7 +225,7 @@ class NetconfMCPServer:
                 session_ref=request["session_ref"],
             )
 
-        @self.server.tool("datastore.get")
+        @self._tool("datastore.get")
         def _get_datastore(arguments: dict[str, Any] | None = None):
             """Read structured operational or mixed datastore data.
 
@@ -208,7 +235,7 @@ class NetconfMCPServer:
             """
             return self._datastore_read("datastore.get", arguments, strict_config=False)
 
-        @self.server.tool("datastore.get_config")
+        @self._tool("datastore.get_config")
         def _get_config(arguments: dict[str, Any] | None = None):
             """Read structured configuration data from a datastore.
 
@@ -218,7 +245,7 @@ class NetconfMCPServer:
             """
             return self._datastore_read("datastore.get_config", arguments, strict_config=True)
 
-        @self.server.tool("tnsr.get_domain_view")
+        @self._tool("tnsr.get_domain_view")
         def _tnsr_get_domain_view(arguments: dict[str, Any] | None = None):
             """Return a compact TNSR-specific domain view for agent use.
 
@@ -289,7 +316,7 @@ class NetconfMCPServer:
                 session_ref=request["session_ref"],
             )
 
-        @self.server.tool("config.plan_edit")
+        @self._tool("config.plan_edit")
         def _plan_edit(arguments: dict[str, Any] | None = None):
             arguments = arguments or {}
             request = self._envelope_request("config.plan_edit", arguments)
@@ -350,7 +377,7 @@ class NetconfMCPServer:
                 confidence=payload.get("confidence", "medium"),
             )
 
-        @self.server.tool("config.validate_plan")
+        @self._tool("config.validate_plan")
         def _validate_plan(arguments: dict[str, Any] | None = None):
             arguments = arguments or {}
             request = self._envelope_request("config.validate_plan", arguments)
@@ -407,7 +434,7 @@ class NetconfMCPServer:
                 confidence=payload.get("confidence", "medium"),
             )
 
-        @self.server.tool("config.apply_plan")
+        @self._tool("config.apply_plan")
         def _apply_plan(arguments: dict[str, Any] | None = None):
             arguments = arguments or {}
             request = self._envelope_request("config.apply_plan", arguments)
@@ -477,7 +504,7 @@ class NetconfMCPServer:
                 session_ref=request["session_ref"],
             )
 
-        @self.server.tool("config.rollback")
+        @self._tool("config.rollback")
         def _rollback(arguments: dict[str, Any] | None = None):
             arguments = arguments or {}
             request = self._envelope_request("config.rollback", arguments)
@@ -541,11 +568,11 @@ class NetconfMCPServer:
                 session_ref=request["session_ref"],
             )
 
-        @self.server.resource("targets://inventory")
+        @self._resource("targets://inventory")
         def _resource_inventory() -> dict:
             return self._ok("resource://inventory", "target://inventory", "resource", self.engine.list_targets())["data"]
 
-        @self.server.resource("target://{target_ref}/facts")
+        @self._resource("target://{target_ref}/facts")
         def _resource_facts(target_ref: str) -> dict[str, Any]:
             return {
                 "resource_id": f"target://{target_ref}/facts",
@@ -558,7 +585,7 @@ class NetconfMCPServer:
                 },
             }
 
-        @self.server.resource("target://{target_ref}/capabilities")
+        @self._resource("target://{target_ref}/capabilities")
         def _resource_capabilities(target_ref: str) -> dict[str, Any]:
             # convenience for read-only resource tests; returns an empty shell when no session exists
             return {
@@ -573,7 +600,7 @@ class NetconfMCPServer:
                 },
             }
 
-        @self.server.resource("target://{target_ref}/yang-library")
+        @self._resource("target://{target_ref}/yang-library")
         def _resource_yang_library(target_ref: str) -> dict[str, Any]:
             return {
                 "resource_id": f"target://{target_ref}/yang-library",
@@ -587,7 +614,7 @@ class NetconfMCPServer:
                 },
             }
 
-        @self.server.resource("target://{target_ref}/datastores/{name}")
+        @self._resource("target://{target_ref}/datastores/{name}")
         def _resource_datastore(target_ref: str, name: str) -> dict[str, Any]:
             return {
                 "resource_id": f"target://{target_ref}/datastores/{name}",
@@ -601,7 +628,7 @@ class NetconfMCPServer:
                 },
             }
 
-        @self.server.resource("target://{target_ref}/session-state")
+        @self._resource("target://{target_ref}/session-state")
         def _resource_session_state(target_ref: str) -> dict[str, Any]:
             return {
                 "resource_id": f"target://{target_ref}/session-state",
@@ -615,28 +642,28 @@ class NetconfMCPServer:
                 },
             }
 
-        @self.server.prompt("discover-device-safely")
+        @self._prompt("discover-device-safely")
         def _prompt_discover(target_ref: str, session_ref: str, include_yang_library: bool = True) -> str:
             return (
                 "Use approved read-only flows only. Target=" + target_ref
                 + f", include_yang_library={include_yang_library}"
             )
 
-        @self.server.prompt("inspect-operational-state")
+        @self._prompt("inspect-operational-state")
         def _prompt_operational(target_ref: str, session_ref: str, object_path: str) -> str:
             return (
                 f"Inspect operational read for {target_ref} object={object_path}.\n"
                 "Use datastore.get with requested_mode read and a precise xpath filter."
             )
 
-        @self.server.prompt("review-yang-capabilities")
+        @self._prompt("review-yang-capabilities")
         def _prompt_review(target_ref: str, session_ref: str, gap_tolerance: str = "low") -> str:
             return (
                 f"Review yang capabilities for {target_ref}. gap_tolerance={gap_tolerance}. "
                 "Prefer evidence-backed interpretation only."
             )
 
-        @self.server.prompt("netconf-data-fidelity")
+        @self._prompt("netconf-data-fidelity")
         def _prompt_data_fidelity(target_ref: str, session_ref: str, scope: str = "structured-data") -> str:
             return (
                 f"Review returned NETCONF data for {target_ref}. scope={scope}. "
@@ -958,20 +985,18 @@ class NetconfMCPServer:
         }
 
     def get_server(self):
+        self.server._tools = self._tools
+        self.server._resources = self._resources
+        self.server._prompts = self._prompts
         return self.server
 
     def start(self, transport: str = "stdio") -> None:
         return self.server.run()
 
     def exposure_snapshot(self):
-        if hasattr(self.server, "_tools"):
-            tools = sorted(self.server._tools)
-            resources = sorted(self.server._resources)
-            prompts = sorted(self.server._prompts)
-        else:
-            tools = list(READ_ONLY_TOOLSET)
-            resources = list(READ_ONLY_RESOURCE_URIS)
-            prompts = list(READ_ONLY_PROMPTS)
+        tools = sorted(self._tools)
+        resources = sorted(self._resources)
+        prompts = sorted(self._prompts)
         return MCPManifest(tools=tools, resources=resources, prompts=prompts)
 
 
