@@ -18,6 +18,8 @@ from netconf_mcp.core.contracts import (
 )
 from netconf_mcp.protocol.engine import NetconfReadEngine
 from netconf_mcp.utils.redact import redact_mapping
+from netconf_mcp.vendors.arista import AristaCollector
+from netconf_mcp.vendors.arista_views import DOMAIN_CHOICES as ARISTA_DOMAIN_CHOICES
 from netconf_mcp.vendors.tnsr import TNSRCollector
 from netconf_mcp.vendors.tnsr_views import DOMAIN_CHOICES, build_tnsr_domain_view
 
@@ -311,6 +313,78 @@ class NetconfMCPServer:
             return self._ok(
                 request["operation_id"],
                 "tnsr.get_domain_view",
+                request["target_ref"],
+                payload,
+                session_ref=request["session_ref"],
+            )
+
+        @self._tool("arista.get_domain_view")
+        def _arista_get_domain_view(arguments: dict[str, Any] | None = None):
+            """Return a compact Arista EOS-specific domain view for agent use.
+
+            Use this instead of broad datastore reads when asking about interfaces, VLANs, VRFs,
+            LAGs, BGP, LLDP, system info, or routing on Arista EOS. Values in the returned domain
+            payload should be quoted verbatim. Treat returned fields as configuration state unless
+            the payload explicitly says otherwise; do not present configured settings as operational
+            behavior without an explicit supporting signal.
+            """
+            arguments = arguments or {}
+            request = self._envelope_request("arista.get_domain_view", arguments)
+            args = request["arguments"]
+            domain = args.get("domain")
+            if domain not in ARISTA_DOMAIN_CHOICES:
+                return self._error(
+                    request["operation_id"],
+                    "arista.get_domain_view",
+                    request["target_ref"],
+                    {
+                        "status": "error",
+                        "error_category": "schema",
+                        "error_code": "BAD_DOMAIN",
+                        "error_type": "BAD_DOMAIN",
+                        "error_tag": "invalid-value",
+                        "error_message": f"Unsupported Arista EOS domain: {domain}",
+                    },
+                    session_ref=request["session_ref"],
+                )
+            try:
+                payload = self._arista_domain_view_payload(
+                    session_ref=request["session_ref"],
+                    domain=domain,
+                    hostkey_policy=args.get("hostkey_policy", "strict"),
+                )
+            except KeyError:
+                return self._error(
+                    request["operation_id"],
+                    "arista.get_domain_view",
+                    request["target_ref"],
+                    {
+                        "status": "error",
+                        "error_category": "transport",
+                        "error_code": "SESSION_UNKNOWN",
+                        "error_type": "SESSION_UNKNOWN",
+                        "error_message": "Unknown session reference",
+                    },
+                    session_ref=request["session_ref"],
+                )
+            except ValueError as exc:
+                return self._error(
+                    request["operation_id"],
+                    "arista.get_domain_view",
+                    request["target_ref"],
+                    {
+                        "status": "error",
+                        "error_category": "schema",
+                        "error_code": "UNSUPPORTED_TARGET",
+                        "error_type": "UNSUPPORTED_TARGET",
+                        "error_tag": "operation-not-supported",
+                        "error_message": str(exc),
+                    },
+                    session_ref=request["session_ref"],
+                )
+            return self._ok(
+                request["operation_id"],
+                "arista.get_domain_view",
                 request["target_ref"],
                 payload,
                 session_ref=request["session_ref"],
@@ -862,6 +936,41 @@ class NetconfMCPServer:
             "target_ref": session.target_ref,
             "domain": domain,
             "view": build_tnsr_domain_view(snapshot, domain),
+            "source_metadata": {
+                "mode": session.backend,
+                "target_name": session.target_name,
+            },
+        }
+
+    def _arista_domain_view_payload(
+        self,
+        *,
+        session_ref: str | None,
+        domain: str,
+        hostkey_policy: str,
+    ) -> dict[str, Any]:
+        if not session_ref:
+            raise ValueError("Arista EOS domain views require an open session")
+
+        session = self.engine._require_session(session_ref)
+        target = self.engine._target_by_ref(session.target_ref)
+        facts = target.get("facts", {})
+        if facts.get("os") != "eos":
+            raise ValueError("Arista EOS domain views are only available for Arista EOS targets")
+
+        if session.backend == "live-ssh":
+            snapshot = AristaCollector(client=self.engine.live_client).collect_snapshot(target, hostkey_policy=hostkey_policy).to_dict()
+        else:
+            raise ValueError("Arista EOS domain views are not implemented for fixture-backed non-EOS profiles")
+
+        from netconf_mcp.vendors.arista import get_domain_view
+
+        return {
+            "vendor": "arista",
+            "os": "eos",
+            "target_ref": session.target_ref,
+            "domain": domain,
+            "view": get_domain_view(snapshot, domain),
             "source_metadata": {
                 "mode": session.backend,
                 "target_name": session.target_name,

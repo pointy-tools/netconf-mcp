@@ -1,0 +1,7 @@
+name: arista-ceos-lab
+topology:
+  nodes:
+    ceos1:
+      kind: arista_ceos
+      image: ceos:4.32.0F
+      startup-config: startup-config.cfg

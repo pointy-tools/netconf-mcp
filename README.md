@@ -19,11 +19,26 @@ The current implementation is designed for safe local development, not direct pr
 - a safe read/propose workflow for network source-of-truth repos
 - a TNSR-first implementation with fixture-backed tests and live read-only validation
 
+## Arista lab path
+
+For live interoperability work, the repository recommends a Linux-hosted `cEOS-lab + containerlab` path as the primary option:
+
+- fast to stand up in CI/local environments
+- predictable startup and management-interface behavior
+- direct NETCONF access on the standard SSH-managed port `830`
+
+`vEOS-lab` remains a documented fallback when your environment or image access requires it.
+
 ## What this is not
 
 - a production-hardened write engine
 - a credential-management system
 - a complete multi-vendor platform yet
+
+## Supported Vendors
+
+- **TNSR** — Full snapshot, domain views, and proposal generation
+- **Arista EOS** — OpenConfig-based snapshot collection and domain views
 
 ## Implemented tool surface
 
@@ -37,6 +52,7 @@ Read and discovery:
 - `datastore.get`
 - `datastore.get_config`
 - `tnsr.get_domain_view`
+- `arista.get_domain_view`
 
 Guarded write workflow:
 
@@ -82,6 +98,14 @@ For live lab testing, start from the example inventory:
 cp lab-inventory.example.json lab-inventory.json
 ```
 
+For an Arista-first path, use the Arista example file and the companion lab guide:
+
+```bash
+cp lab-inventory.arista.example.json lab-inventory.json
+```
+
+Reference [`docs/arista-lab.md`](docs/arista-lab.md) for containerlab startup, image, and verification flow details.
+
 ## Status
 
 What is working now:
@@ -94,10 +118,12 @@ What is working now:
 - experimental live read-only TNSR NETCONF probing
 - normalized TNSR snapshot generation for code-diff workflows
 - TNSR managed-config proposal generation from normalized snapshots
-- expanded TNSR routing-policy coverage for prefix-lists and route-maps
+- TNSR routing-policy coverage for prefix-lists and route-maps
 - TNSR BFD session coverage in snapshot and proposal outputs
 - TNSR NAT and VPF filter-ruleset coverage for source-of-truth proposals
 - TNSR-specific MCP domain views for compact policy/config questions
+- Arista EOS OpenConfig-based snapshot collection (interfaces, VLANs, VRFs, LAGs, BGP, LLDP, system, routing)
+- Arista EOS MCP domain views for compact agent-facing queries
 
 What is still intentionally deferred:
 

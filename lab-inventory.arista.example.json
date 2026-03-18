@@ -1,0 +1,34 @@
+{
+  "targets": [
+    {
+      "target_ref": "target://lab/arista",
+      "name": "arista-ceos-lab",
+      "site": "example-site",
+      "role": [
+        "edge"
+      ],
+      "status": "online",
+      "safety_state": "ready",
+      "transport_mode": "live-ssh",
+      "transport": {
+        "protocol": "ssh",
+        "framing": "base:1.0"
+      },
+      "host": "arista-ceos.example.net",
+      "port": 830,
+      "username": "admin",
+      "facts": {
+        "vendor": "arista",
+        "os": "eos",
+        "platform": "ceos"
+      },
+      "namespace_map": {
+        "openconfig_interfaces": "<urn:ietf:params:xml:ns:yang:openconfig-interfaces>",
+        "openconfig_network_instance": "<urn:ietf:params:xml:ns:yang:openconfig-network-instance>",
+        "openconfig_bgp": "<urn:ietf:params:xml:ns:yang:openconfig-bgp>"
+      },
+      "safety_profile": "read-only",
+      "last_seen_utc": "2026-03-12T00:00:00Z"
+    }
+  ]
+}

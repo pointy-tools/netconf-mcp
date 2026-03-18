@@ -128,13 +128,15 @@ class LiveNetconfSSHClient:
     ) -> dict[str, Any]:
         del session, subtree, with_defaults
         if strict_config:
-            filter_xml = self._build_subtree_filter(xpath) if xpath else ""
+            namespace_map = target.get("namespace_map") if isinstance(target, dict) else None
+            filter_xml = self._build_subtree_filter(xpath, namespace_map=namespace_map) if xpath else ""
             rpc_xml = (
                 "<rpc message-id='301' xmlns='urn:ietf:params:xml:ns:netconf:base:1.0'>"
                 f"<get-config><source><{datastore}/></source>{filter_xml}</get-config></rpc>"
             )
         else:
-            filter_xml = self._build_subtree_filter(xpath) if xpath else ""
+            namespace_map = target.get("namespace_map") if isinstance(target, dict) else None
+            filter_xml = self._build_subtree_filter(xpath, namespace_map=namespace_map) if xpath else ""
             rpc_xml = (
                 "<rpc message-id='302' xmlns='urn:ietf:params:xml:ns:netconf:base:1.0'>"
                 f"<get>{filter_xml}</get></rpc>"
@@ -177,11 +179,12 @@ class LiveNetconfSSHClient:
         }
 
     @classmethod
-    def _build_subtree_filter(cls, xpath: str) -> str:
+    def _build_subtree_filter(cls, xpath: str, namespace_map: dict[str, str] | None = None) -> str:
         segments = [segment for segment in xpath.split("/") if segment]
         if not segments:
             return ""
 
+        namespace_declarations: dict[str, str] = {}
         xml = ""
         closers: list[str] = []
         for raw_segment in segments:
@@ -201,15 +204,78 @@ class LiveNetconfSSHClient:
                     }
                 )
 
-            name = match.group("name").split(":")[-1]
+            name = match.group("name")
+            if ":" in name:
+                prefix, local_name = name.split(":", 1)
+                namespace_uri = cls._resolve_namespace_uri(namespace_map, prefix)
+                if not namespace_uri:
+                    raise LiveNetconfError(
+                        {
+                            "status": "error",
+                            "error_category": "schema",
+                            "error_code": "UNSUPPORTED_XPATH",
+                            "error_type": "UNSUPPORTED_XPATH",
+                            "error_tag": "invalid-value",
+                            "error_message": f"Missing namespace mapping for xpath prefix '{prefix}'",
+                        }
+                    )
+                namespace_declarations.setdefault(prefix, namespace_uri)
+                name = f"{prefix}:{local_name}"
+            else:
+                name = name
+
             xml += f"<{name}>"
             closers.append(f"</{name}>")
             if match.group("key"):
-                key = match.group("key").split(":")[-1]
+                key = match.group("key")
                 value = match.group("value")
+                if ":" in key:
+                    key_prefix, key_local_name = key.split(":", 1)
+                    namespace_uri = cls._resolve_namespace_uri(namespace_map, key_prefix)
+                    if not namespace_uri:
+                        raise LiveNetconfError(
+                            {
+                                "status": "error",
+                                "error_category": "schema",
+                                "error_code": "UNSUPPORTED_XPATH",
+                                "error_type": "UNSUPPORTED_XPATH",
+                                "error_tag": "invalid-value",
+                                "error_message": f"Missing namespace mapping for xpath key prefix '{key_prefix}'",
+                            }
+                        )
+                    namespace_declarations.setdefault(key_prefix, namespace_uri)
+                    key = f"{key_prefix}:{key_local_name}"
+                else:
+                    key = key.split(":")[-1]
                 xml += f"<{key}>{value}</{key}>"
 
-        return f"<filter type='subtree'>{xml}{''.join(reversed(closers))}</filter>"
+        namespace_fragment = "".join(f" xmlns:{prefix}='{uri}'" for prefix, uri in namespace_declarations.items())
+        return f"<filter type='subtree'{namespace_fragment}>{xml}{''.join(reversed(closers))}</filter>"
+
+    @staticmethod
+    def _normalize_namespace_uri(namespace_uri: Any) -> str | None:
+        if namespace_uri is None:
+            return None
+        text = str(namespace_uri).strip()
+        if len(text) >= 2 and text[0] == "<" and text[-1] == ">":
+            text = text[1:-1].strip()
+        return text or None
+
+    @classmethod
+    def _resolve_namespace_uri(cls, namespace_map: dict[str, str] | None, prefix: str) -> str | None:
+        if not namespace_map:
+            return None
+
+        candidates = {prefix, prefix.replace("-", "_"), prefix.replace("_", "-")}
+        for candidate in candidates:
+            if candidate in namespace_map:
+                return cls._normalize_namespace_uri(namespace_map[candidate])
+
+        normalized = prefix.replace("-", "_")
+        for key, value in namespace_map.items():
+            if str(key).replace("-", "_") == normalized:
+                return cls._normalize_namespace_uri(value)
+        return None
 
     def _exchange(
         self,

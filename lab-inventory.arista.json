@@ -1,0 +1,43 @@
+{
+  "targets": [
+    {
+      "target_ref": "target://lab/arista-ceos",
+      "name": "arista-ceos-lab",
+      "site": "home-lab",
+      "role": [
+        "edge"
+      ],
+      "status": "online",
+      "safety_state": "ready",
+      "transport_mode": "live-ssh",
+      "transport": {
+        "protocol": "ssh",
+        "framing": "base:1.0"
+      },
+      "host": "172.20.20.2",
+      "port": 830,
+      "username": "admin",
+      "facts": {
+        "vendor": "arista",
+        "os": "eos",
+        "platform": "ceos"
+      },
+      "namespace_map": {
+        "oc-if": "urn:ietf:params:xml:ns:yang:openconfig-interfaces",
+        "oc-eth": "urn:ietf:params:xml:ns:yang:openconfig-if-ethernet",
+        "oc-ip": "urn:ietf:params:xml:ns:yang:openconfig-if-ip",
+        "oc-lacp": "urn:ietf:params:xml:ns:yang:openconfig-lacp",
+        "oc-vlan": "urn:ietf:params:xml:ns:yang:openconfig-vlan",
+        "oc-ni": "urn:ietf:params:xml:ns:yang:openconfig-network-instance",
+        "oc-lldp": "urn:ietf:params:xml:ns:yang:openconfig-lldp",
+        "oc-sys": "urn:ietf:params:xml:ns:yang:openconfig-system",
+        "oc-bgp": "urn:ietf:params:xml:ns:yang:openconfig-bgp",
+        "oc-rpol": "urn:ietf:params:xml:ns:yang:openconfig-routing-policy",
+        "oc-local-routing": "urn:ietf:params:xml:ns:yang:openconfig-local-routing",
+        "oc-aaa": "urn:ietf:params:xml:ns:yang:openconfig-aaa"
+      },
+      "safety_profile": "read-only",
+      "last_seen_utc": "2026-03-17T00:00:00Z"
+    }
+  ]
+}

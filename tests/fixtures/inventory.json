@@ -31,6 +31,21 @@
       "last_seen_utc": "2026-03-12T00:00:00Z"
     },
     {
+      "target_ref": "target://lab/arista",
+      "name": "arista-ceos",
+      "site": "dc-west",
+      "role": ["edge"],
+      "status": "online",
+      "safety_state": "ready",
+      "transport": {"protocol": "ssh", "framing": "base:1.1"},
+      "profile": "arista-eos-openconfig",
+      "credential_ref": "cred://vault/lab/arista",
+      "facts": {"vendor": "arista", "os": "eos", "platform": "ceos"},
+      "capability_profile": "full",
+      "safety_profile": "read-only",
+      "last_seen_utc": "2026-03-16T00:00:00Z"
+    },
+    {
       "target_ref": "target://lab/transport",
       "name": "transport-fail",
       "site": "dc-west",

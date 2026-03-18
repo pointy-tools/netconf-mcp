@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from netconf_mcp.mcp.server import create_server
 
@@ -13,6 +14,8 @@ class DummyLiveClient:
     def open_session(self, target, *, framing="auto", hostkey_policy="strict", connect_timeout_ms=None):
         del hostkey_policy, connect_timeout_ms
         selected = "base:1.0" if framing == "auto" else framing
+        facts = target.get("facts", {})
+        os_type = facts.get("os", "tnsr")
         return type(
             "LiveSession",
             (),
@@ -24,6 +27,7 @@ class DummyLiveClient:
                     "urn:ietf:params:netconf:capability:with-defaults:1.0",
                 ],
                 "transport": {"protocol": "ssh", "framing": selected},
+                "target_os": os_type,
             },
         )()
 
@@ -50,7 +54,127 @@ class DummyLiveClient:
         }
 
     def datastore_get(self, target, session, *, datastore="running", xpath=None, subtree=None, with_defaults="explicit", strict_config=False):
-        del target, session, subtree, with_defaults
+        del target, subtree, with_defaults
+        # Check target OS from session
+        target_os = getattr(session, "target_os", "tnsr")
+
+        # Handle Arista EOS xpaths
+        if target_os == "eos":
+            if xpath and "oc-if:interfaces" in xpath:
+                return {
+                    "resource": {"datastore": datastore, "filter": xpath},
+                    "nacm_visibility": "unknown",
+                    "value": [
+                        {
+                            "name": "Ethernet1",
+                            "config": {"enabled": True, "description": "Uplink", "type": "ethernetCsmacd", "mtu": 9000},
+                            "ipv4": {
+                                "config": {"ip": "10.0.1.1", "prefix-length": "24"},
+                            },
+                        }
+                    ],
+                    "source_metadata": {"mode": "live-netconf", "host": "arista-ceos", "strict_config": strict_config},
+                    "raw_xml": "<rpc-reply/>",
+                }
+            elif xpath and "oc-vlan:vlans" in xpath:
+                return {
+                    "resource": {"datastore": datastore, "filter": xpath},
+                    "nacm_visibility": "unknown",
+                    "value": [
+                        {"vlan-id": 10, "config": {"name": "DATA", "enabled": True}},
+                        {"vlan-id": 20, "config": {"name": "VOICE", "enabled": True}},
+                    ],
+                    "source_metadata": {"mode": "live-netconf", "host": "arista-ceos", "strict_config": strict_config},
+                    "raw_xml": "<rpc-reply/>",
+                }
+            elif xpath and "oc-ni:network-instances" in xpath:
+                # VRFs - need to return dict with network-instance key
+                if "network-instance[name='default']" in xpath or "network-instance" in xpath:
+                    return {
+                        "resource": {"datastore": datastore, "filter": xpath},
+                        "nacm_visibility": "unknown",
+                        "value": {
+                            "network-instance": [
+                                {"name": "default", "config": {"enabled": True, "description": "Default VRF"}},
+                            ]
+                        },
+                        "source_metadata": {"mode": "live-netconf", "host": "arista-ceos", "strict_config": strict_config},
+                        "raw_xml": "<rpc-reply/>",
+                    }
+                # Static routes
+                if "static-routes" in xpath:
+                    return {
+                        "resource": {"datastore": datastore, "filter": xpath},
+                        "nacm_visibility": "unknown",
+                        "value": {
+                            "network-instance": [
+                                {
+                                    "name": "default",
+                                    "static-routes": {
+                                        "static": [
+                                            {
+                                                "prefix": "0.0.0.0/0",
+                                                "next-hop": {
+                                                    "next-hop": [
+                                                        {"config": {"next-hop-address": "10.0.1.254", "outgoing-interface": "Ethernet1"}}
+                                                    ]
+                                                },
+                                            }
+                                        ]
+                                    },
+                                }
+                            ]
+                        },
+                        "source_metadata": {"mode": "live-netconf", "host": "arista-ceos", "strict_config": strict_config},
+                        "raw_xml": "<rpc-reply/>",
+                    }
+                # BGP
+                if "protocols/protocol/bgp" in xpath:
+                    return {
+                        "resource": {"datastore": datastore, "filter": xpath},
+                        "nacm_visibility": "unknown",
+                        "value": {
+                            "network-instance": [
+                                {
+                                    "name": "default",
+                                    "protocols": {
+                                        "protocol": [
+                                            {
+                                                "identifier": "BGP",
+                                                "bgp": {
+                                                    "global": {
+                                                        "config": {"enabled": True, "as": 65001, "router-id": "10.0.1.1"}
+                                                    }
+                                                },
+                                            }
+                                        ]
+                                    },
+                                }
+                            ]
+                        },
+                        "source_metadata": {"mode": "live-netconf", "host": "arista-ceos", "strict_config": strict_config},
+                        "raw_xml": "<rpc-reply/>",
+                    }
+                return {"resource": {"datastore": datastore, "filter": xpath}, "nacm_visibility": "unknown", "value": {}, "source_metadata": {"mode": "live-netconf"}, "raw_xml": "<rpc-reply/>"}
+            elif xpath and "oc-lldp:lldp" in xpath:
+                return {
+                    "resource": {"datastore": datastore, "filter": xpath},
+                    "nacm_visibility": "unknown",
+                    "value": [],
+                    "source_metadata": {"mode": "live-netconf", "host": "arista-ceos", "strict_config": strict_config},
+                    "raw_xml": "<rpc-reply/>",
+                }
+            elif xpath and "oc-sys:system" in xpath:
+                return {
+                    "resource": {"datastore": datastore, "filter": xpath},
+                    "nacm_visibility": "unknown",
+                    "value": {"hostname": "arista-spine-01", "version": "4.30.1M", "platform-id": "vEOS"},
+                    "source_metadata": {"mode": "live-netconf", "host": "arista-ceos", "strict_config": strict_config},
+                    "raw_xml": "<rpc-reply/>",
+                }
+            return {"resource": {"datastore": datastore, "filter": xpath or "all"}, "nacm_visibility": "unknown", "value": {}, "source_metadata": {"mode": "live-netconf"}, "raw_xml": "<rpc-reply/>"}
+
+        # TNSR handling (original code)
         if xpath is None:
             value = {
                 "host-if-config": {
@@ -159,6 +283,47 @@ class DummyLiveClient:
         }
 
 
+class CapturingLiveClient(DummyLiveClient):
+    def __init__(self):
+        self.invocations: list[dict[str, Any]] = []
+
+    def datastore_get(self, target, session, *, datastore="running", xpath=None, subtree=None, with_defaults="explicit", strict_config=False):
+        del session, subtree, with_defaults
+        self.invocations.append(
+            {
+                "target": target,
+                "datastore": datastore,
+                "xpath": xpath,
+                "strict_config": strict_config,
+            }
+        )
+
+        if xpath == "/openconfig_interfaces:interfaces/openconfig_interfaces:interface[name='Ethernet1']/enabled":
+            value = "true"
+        elif xpath is None:
+            value = {
+                "openconfig_interfaces": {
+                    "interfaces": {
+                        "interface": {"name": "Ethernet1", "enabled": "true"}
+                    }
+                }
+            }
+        else:
+            value = {"payload": "x" * 2}
+
+        return {
+            "resource": {"datastore": datastore, "filter": xpath or "all"},
+            "nacm_visibility": "unknown",
+            "value": value,
+            "source_metadata": {
+                "mode": "live-netconf",
+                "host": "arista-ceos",
+                "strict_config": strict_config,
+            },
+            "raw_xml": "<rpc-reply/>",
+        }
+
+
 def _write_live_inventory(tmp_path: Path) -> Path:
     inventory_path = tmp_path / "inventory-live.json"
     payload = {
@@ -185,6 +350,71 @@ def _write_live_inventory(tmp_path: Path) -> Path:
     return inventory_path
 
 
+def _write_arista_live_inventory(tmp_path: Path) -> Path:
+    inventory_path = tmp_path / "inventory-live-arista.json"
+    payload = {
+        "targets": [
+            {
+                "target_ref": "target://lab/arista",
+                "name": "arista-ceos",
+                "site": "lab",
+                "role": ["spine"],
+                "status": "online",
+                "safety_state": "ready",
+                "transport_mode": "live-ssh",
+                "transport": {"protocol": "ssh", "framing": "base:1.0"},
+                "host": "arista-ceos.example.net",
+                "port": 830,
+                "username": "admin",
+                "facts": {"vendor": "arista", "os": "eos", "platform": "ceos"},
+                "namespace_map": {
+                    "oc-if": "http://openconfig.net/yang/interfaces",
+                    "oc-eth": "http://openconfig.net/yang/interfaces/ethernet",
+                    "oc-ip": "http://openconfig.net/yang/interfaces/ip",
+                    "oc-vlan": "http://openconfig.net/yang/vlan",
+                    "oc-ni": "http://openconfig.net/yang/network-instance",
+                    "oc-lldp": "http://openconfig.net/yang/lldp",
+                    "oc-sys": "http://openconfig.net/yang/system",
+                },
+                "safety_profile": "read-only",
+                "last_seen_utc": "2026-03-12T00:00:00Z",
+            }
+        ]
+    }
+    inventory_path.write_text(json.dumps(payload), encoding="utf-8")
+    return inventory_path
+
+
+def _write_openconfig_live_inventory(tmp_path: Path) -> Path:
+    inventory_path = tmp_path / "inventory-live-openconfig.json"
+    payload = {
+        "targets": [
+            {
+                "target_ref": "target://lab/arista",
+                "name": "arista-ceos",
+                "site": "lab",
+                "role": ["edge"],
+                "status": "online",
+                "safety_state": "ready",
+                "transport_mode": "live-ssh",
+                "transport": {"protocol": "ssh", "framing": "base:1.0"},
+                "host": "arista-ceos.example.net",
+                "port": 830,
+                "username": "admin",
+                "facts": {"vendor": "arista", "os": "eos", "platform": "ceos"},
+                "namespace_map": {
+                    "openconfig_interfaces": "<urn:ietf:params:xml:ns:yang:openconfig-interfaces>",
+                    "openconfig_interfaces_ipv4": "<urn:ietf:params:xml:ns:yang:openconfig-if-ip>",
+                },
+                "safety_profile": "read-only",
+                "last_seen_utc": "2026-03-12T00:00:00Z",
+            }
+        ]
+    }
+    inventory_path.write_text(json.dumps(payload), encoding="utf-8")
+    return inventory_path
+
+
 def test_read_only_manifest_exposed_and_only_read_only_names():
     runtime = create_server(FIXTURES)
     snapshot = runtime.exposure_snapshot()
@@ -197,6 +427,7 @@ def test_read_only_manifest_exposed_and_only_read_only_names():
         "datastore.get",
         "datastore.get_config",
         "tnsr.get_domain_view",
+        "arista.get_domain_view",
         "config.plan_edit",
         "config.validate_plan",
         "config.apply_plan",
@@ -265,6 +496,46 @@ def test_discovery_and_filtered_reads():
     )
     assert operational["status"] == "ok"
     assert operational["data"]["value"] == "10G"
+
+
+def test_arista_fixture_discovery_and_config_read():
+    runtime = create_server(FIXTURES)
+    tool = runtime.get_server()
+
+    targets = tool._tools["inventory.list_targets"]({"arguments": {"filter": {"status": "online"}}})
+    assert any(item["target_ref"] == "target://lab/arista" for item in targets["data"]["targets"])
+
+    open_session = tool._tools["netconf.open_session"](
+        {
+            "target_ref": "target://lab/arista",
+            "arguments": {"credential_ref": "cred://vault/lab/arista"},
+        }
+    )
+    assert open_session["status"] == "ok"
+    assert open_session["data"]["profile"] == "arista-eos-openconfig"
+
+    session_ref = open_session["data"]["session_ref"]
+    caps = tool._tools["netconf.discover_capabilities"]({"session_ref": session_ref})
+    assert caps["status"] == "ok"
+    assert "urn:ietf:params:netconf:capability:candidate:1.0" in caps["data"]["capability_catalog"]
+
+    lib = tool._tools["yang.get_library"]({"session_ref": session_ref})
+    assert lib["status"] == "ok"
+    assert lib["data"]["provenance"] == "live-netconf"
+    assert lib["data"]["completeness"] == "low"
+
+    monitor = tool._tools["netconf.get_monitoring"]({"session_ref": session_ref, "arguments": {"scope": "all"}})
+    assert monitor["status"] == "ok"
+    assert monitor["data"]["sessions"][0]["session-id"] == "183020499"
+
+    config = tool._tools["datastore.get_config"](
+        {
+            "session_ref": session_ref,
+            "arguments": {"datastore": "running", "xpath": "/interfaces/interface[name='Management1']/description"},
+        }
+    )
+    assert config["status"] == "ok"
+    assert config["data"]["value"] == "arista-cEOS-lab"
 
 
 def test_nacm_restricted_read_is_blocked():
@@ -579,6 +850,32 @@ def test_datastore_get_config_accepts_xpath_filter_alias_for_live_reads(tmp_path
     assert config["data"]["value"] == "true"
 
 
+def test_datastore_get_config_accepts_prefixed_openconfig_xpath_for_live_reads(tmp_path: Path):
+    inventory_path = _write_openconfig_live_inventory(tmp_path)
+    live_client = CapturingLiveClient()
+    runtime = create_server(FIXTURES, inventory_path=inventory_path, live_client=live_client)
+    tool = runtime.get_server()
+
+    opened = tool._tools["netconf.open_session"]({"target_ref": "target://lab/arista"})
+    session_ref = opened["data"]["session_ref"]
+
+    config = tool._tools["datastore.get_config"](
+        {
+            "session_ref": session_ref,
+            "arguments": {
+                "datastore": "running",
+                "xpath": "/openconfig_interfaces:interfaces/openconfig_interfaces:interface[name='Ethernet1']/enabled",
+            },
+        }
+    )
+
+    assert config["status"] == "ok"
+    assert config["data"]["value"] == "true"
+    assert live_client.invocations
+    assert live_client.invocations[0]["xpath"].startswith("/openconfig_interfaces:")
+    assert "openconfig_interfaces" in live_client.invocations[0]["target"].get("namespace_map", {})
+
+
 def test_datastore_get_config_rejects_conflicting_filter_arguments(tmp_path: Path):
     inventory_path = _write_live_inventory(tmp_path)
     runtime = create_server(FIXTURES, inventory_path=inventory_path, live_client=DummyLiveClient())
@@ -692,3 +989,67 @@ def test_tnsr_domain_view_rejects_non_tnsr_sessions():
 
     assert view["status"] == "error"
     assert view["error"]["error_code"] == "UNSUPPORTED_TARGET"
+
+
+def test_arista_domain_view_returns_compact_interface_view_for_live_session(tmp_path: Path):
+    inventory_path = _write_arista_live_inventory(tmp_path)
+    runtime = create_server(FIXTURES, inventory_path=inventory_path, live_client=DummyLiveClient())
+    tool = runtime.get_server()
+
+    opened = tool._tools["netconf.open_session"]({"target_ref": "target://lab/arista"})
+    session_ref = opened["data"]["session_ref"]
+
+    view = tool._tools["arista.get_domain_view"](
+        {
+            "session_ref": session_ref,
+            "arguments": {
+                "domain": "interfaces",
+            },
+        }
+    )
+
+    assert view["status"] == "ok"
+    assert view["data"]["domain"] == "interfaces"
+    assert view["data"]["view"]["summary"]["interface_count"] == 1
+    assert view["data"]["view"]["interfaces"][0]["name"] == "Ethernet1"
+
+
+def test_arista_domain_view_rejects_non_eos_sessions():
+    runtime = create_server(FIXTURES)
+    tool = runtime.get_server()
+
+    opened = tool._tools["netconf.open_session"](
+        {
+            "target_ref": "target://lab/strict",
+            "arguments": {"credential_ref": "cred://vault/lab/strict"},
+        }
+    )
+    session_ref = opened["data"]["session_ref"]
+
+    view = tool._tools["arista.get_domain_view"](
+        {
+            "session_ref": session_ref,
+            "arguments": {"domain": "interfaces"},
+        }
+    )
+
+    assert view["status"] == "error"
+    assert view["error"]["error_code"] == "UNSUPPORTED_TARGET"
+
+
+def test_arista_domain_view_rejects_invalid_domain():
+    runtime = create_server(FIXTURES)
+    tool = runtime.get_server()
+
+    opened = tool._tools["netconf.open_session"]({"target_ref": "target://lab/arista"})
+    session_ref = opened["data"]["session_ref"]
+
+    view = tool._tools["arista.get_domain_view"](
+        {
+            "session_ref": session_ref,
+            "arguments": {"domain": "invalid-domain"},
+        }
+    )
+
+    assert view["status"] == "error"
+    assert view["error"]["error_code"] == "BAD_DOMAIN"
