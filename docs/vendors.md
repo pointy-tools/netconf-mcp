@@ -37,16 +37,22 @@ Arista EOS uses OpenConfig models with the following namespace prefixes:
 
 The following domain views are available via `arista.get_domain_view`:
 
-| Domain | Description | OpenConfig Path |
-|--------|-------------|-----------------|
-| `interfaces` | Interface config and IP addresses | `/oc-if:interfaces/interface` |
-| `vlans` | VLAN configuration | `/oc-vlan:vlans/vlan` |
-| `vrfs` | VRF/network instance config | `/oc-ni:network-instances/network-instance` |
-| `lags` | LACP LAG interfaces | `/oc-if:interfaces/interface[oc-eth:ethernet]` |
-| `bgp` | BGP global config (ASN, router-id) | `/oc-ni:network-instances/.../protocols/protocol/bgp` |
-| `lldp` | LLDP neighbor discovery | `/oc-lldp:lldp/interfaces/interface` |
-| `system` | System hostname and version | `/oc-sys:system/config` |
-| `routing` | Static routes | `/oc-ni:network-instances/.../static-routes` |
+| Domain | Description | Data Source |
+|--------|-------------|-------------|
+| `interfaces` | Interface config and IP addresses | OpenConfig |
+| `vlans` | VLAN configuration | OpenConfig |
+| `vrfs` | VRF/network instance config | OpenConfig |
+| `lags` | LACP LAG interfaces | OpenConfig |
+| `bgp` | BGP global config (ASN, router-id) | OpenConfig |
+| `lldp` | LLDP neighbor discovery | OpenConfig |
+| `system` | System hostname and version | OpenConfig |
+| `routing` | Static routes | OpenConfig |
+| `routing-policy` | Route maps and prefix lists | OpenConfig |
+| `acls` | Access control lists (IPv4/IPv6) | OpenConfig |
+| `mlag` | Multi-chassis LAG configuration | Arista-proprietary |
+| `evpn-vxlan` | EVPN/VXLAN overlay configuration | Arista-proprietary |
+
+**Note**: MLAG and EVPN/VXLAN domains use Arista-proprietary data sources (not OpenConfig) and require EOS-specific YANG models.
 
 ### Snapshot Collection
 
@@ -84,7 +90,6 @@ Arguments: {
 
 - Domain view tool requires a live session (not fixture-backed)
 - BGP neighbor details not yet extracted (only global config)
-- MLAG, EVPN/VXLAN, ACLs, and routing policy domains are planned but not yet implemented
 - OpenConfig model coverage depends on YANG library advertised by the device
 
 ### Inventory Configuration

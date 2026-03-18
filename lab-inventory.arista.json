@@ -1,12 +1,10 @@
 {
   "targets": [
     {
-      "target_ref": "target://lab/arista-ceos",
-      "name": "arista-ceos-lab",
+      "target_ref": "target://lab/arista-ceos-leaf1",
+      "name": "arista-ceos-lab-leaf1",
       "site": "home-lab",
-      "role": [
-        "edge"
-      ],
+      "role": ["leaf", "mlag-primary", "vtep"],
       "status": "online",
       "safety_state": "ready",
       "transport_mode": "live-ssh",
@@ -14,13 +12,15 @@
         "protocol": "ssh",
         "framing": "base:1.0"
       },
-      "host": "172.20.20.2",
+      "host": "172.20.20.11",
       "port": 830,
       "username": "admin",
       "facts": {
         "vendor": "arista",
         "os": "eos",
-        "platform": "ceos"
+        "platform": "ceos",
+        "asn": "65001",
+        "router_id": "10.0.0.1"
       },
       "namespace_map": {
         "oc-if": "urn:ietf:params:xml:ns:yang:openconfig-interfaces",
@@ -34,7 +34,92 @@
         "oc-bgp": "urn:ietf:params:xml:ns:yang:openconfig-bgp",
         "oc-rpol": "urn:ietf:params:xml:ns:yang:openconfig-routing-policy",
         "oc-local-routing": "urn:ietf:params:xml:ns:yang:openconfig-local-routing",
-        "oc-aaa": "urn:ietf:params:xml:ns:yang:openconfig-aaa"
+        "oc-aaa": "urn:ietf:params:xml:ns:yang:openconfig-aaa",
+        "oc-acl": "urn:ietf:params:xml:ns:yang:openconfig-acl",
+        "oc-mlag": "http://arista.com/yang/openconfig/mlag",
+        "oc-vxlan": "http://arista.com/yang/openconfig/vxlan"
+      },
+      "safety_profile": "read-only",
+      "last_seen_utc": "2026-03-17T00:00:00Z"
+    },
+    {
+      "target_ref": "target://lab/arista-ceos-leaf2",
+      "name": "arista-ceos-lab-leaf2",
+      "site": "home-lab",
+      "role": ["leaf", "mlag-secondary", "vtep"],
+      "status": "online",
+      "safety_state": "ready",
+      "transport_mode": "live-ssh",
+      "transport": {
+        "protocol": "ssh",
+        "framing": "base:1.0"
+      },
+      "host": "172.20.20.12",
+      "port": 830,
+      "username": "admin",
+      "facts": {
+        "vendor": "arista",
+        "os": "eos",
+        "platform": "ceos",
+        "asn": "65001",
+        "router_id": "10.0.0.2"
+      },
+      "namespace_map": {
+        "oc-if": "urn:ietf:params:xml:ns:yang:openconfig-interfaces",
+        "oc-eth": "urn:ietf:params:xml:ns:yang:openconfig-if-ethernet",
+        "oc-ip": "urn:ietf:params:xml:ns:yang:openconfig-if-ip",
+        "oc-lacp": "urn:ietf:params:xml:ns:yang:openconfig-lacp",
+        "oc-vlan": "urn:ietf:params:xml:ns:yang:openconfig-vlan",
+        "oc-ni": "urn:ietf:params:xml:ns:yang:openconfig-network-instance",
+        "oc-lldp": "urn:ietf:params:xml:ns:yang:openconfig-lldp",
+        "oc-sys": "urn:ietf:params:xml:ns:yang:openconfig-system",
+        "oc-bgp": "urn:ietf:params:xml:ns:yang:openconfig-bgp",
+        "oc-rpol": "urn:ietf:params:xml:ns:yang:openconfig-routing-policy",
+        "oc-local-routing": "urn:ietf:params:xml:ns:yang:openconfig-local-routing",
+        "oc-aaa": "urn:ietf:params:xml:ns:yang:openconfig-aaa",
+        "oc-acl": "urn:ietf:params:xml:ns:yang:openconfig-acl",
+        "oc-mlag": "http://arista.com/yang/openconfig/mlag",
+        "oc-vxlan": "http://arista.com/yang/openconfig/vxlan"
+      },
+      "safety_profile": "read-only",
+      "last_seen_utc": "2026-03-17T00:00:00Z"
+    },
+    {
+      "target_ref": "target://lab/arista-ceos-spine",
+      "name": "arista-ceos-lab-spine",
+      "site": "home-lab",
+      "role": ["spine", "route-reflector"],
+      "status": "online",
+      "safety_state": "ready",
+      "transport_mode": "live-ssh",
+      "transport": {
+        "protocol": "ssh",
+        "framing": "base:1.0"
+      },
+      "host": "172.20.20.13",
+      "port": 830,
+      "username": "admin",
+      "facts": {
+        "vendor": "arista",
+        "os": "eos",
+        "platform": "ceos",
+        "asn": "65001",
+        "router_id": "10.0.0.3"
+      },
+      "namespace_map": {
+        "oc-if": "urn:ietf:params:xml:ns:yang:openconfig-interfaces",
+        "oc-eth": "urn:ietf:params:xml:ns:yang:openconfig-if-ethernet",
+        "oc-ip": "urn:ietf:params:xml:ns:yang:openconfig-if-ip",
+        "oc-lacp": "urn:ietf:params:xml:ns:yang:openconfig-lacp",
+        "oc-vlan": "urn:ietf:params:xml:ns:yang:openconfig-vlan",
+        "oc-ni": "urn:ietf:params:xml:ns:yang:openconfig-network-instance",
+        "oc-lldp": "urn:ietf:params:xml:ns:yang:openconfig-lldp",
+        "oc-sys": "urn:ietf:params:xml:ns:yang:openconfig-system",
+        "oc-bgp": "urn:ietf:params:xml:ns:yang:openconfig-bgp",
+        "oc-rpol": "urn:ietf:params:xml:ns:yang:openconfig-routing-policy",
+        "oc-local-routing": "urn:ietf:params:xml:ns:yang:openconfig-local-routing",
+        "oc-aaa": "urn:ietf:params:xml:ns:yang:openconfig-aaa",
+        "oc-acl": "urn:ietf:params:xml:ns:yang:openconfig-acl"
       },
       "safety_profile": "read-only",
       "last_seen_utc": "2026-03-17T00:00:00Z"

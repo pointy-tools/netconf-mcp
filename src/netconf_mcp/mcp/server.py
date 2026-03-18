@@ -323,10 +323,13 @@ class NetconfMCPServer:
             """Return a compact Arista EOS-specific domain view for agent use.
 
             Use this instead of broad datastore reads when asking about interfaces, VLANs, VRFs,
-            LAGs, BGP, LLDP, system info, or routing on Arista EOS. Values in the returned domain
-            payload should be quoted verbatim. Treat returned fields as configuration state unless
-            the payload explicitly says otherwise; do not present configured settings as operational
-            behavior without an explicit supporting signal.
+            LAGs, BGP, LLDP, system info, routing, routing-policy, ACLs, MLAG, or EVPN/VXLAN
+            on Arista EOS. Values in the returned domain payload should be quoted verbatim.
+            Treat returned fields as configuration state unless the payload explicitly says otherwise;
+            do not present configured settings as operational behavior without an explicit supporting signal.
+
+            Supported domains: system, interfaces, vlans, vrfs, lags, bgp, lldp, routing,
+            routing-policy, acls, mlag, evpn-vxlan
             """
             arguments = arguments or {}
             request = self._envelope_request("arista.get_domain_view", arguments)

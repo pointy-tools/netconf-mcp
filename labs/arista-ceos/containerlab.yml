@@ -1,7 +1,35 @@
 name: arista-ceos-lab
 topology:
   nodes:
-    ceos1:
+    leaf1:
       kind: arista_ceos
       image: ceos:4.32.0F
-      startup-config: startup-config.cfg
+      startup-config: startup-config-leaf1.cfg
+      mgmt-ipv4: 172.20.20.11/24
+      mgmt-gw: 172.20.20.1
+    leaf2:
+      kind: arista_ceos
+      image: ceos:4.32.0F
+      startup-config: startup-config-leaf2.cfg
+      mgmt-ipv4: 172.20.20.12/24
+      mgmt-gw: 172.20.20.1
+    spine:
+      kind: arista_ceos
+      image: ceos:4.32.0F
+      startup-config: startup-config-spine.cfg
+      mgmt-ipv4: 172.20.20.13/24
+      mgmt-gw: 172.20.20.1
+
+  links:
+    # Underlay: leaf1 to spine
+    - endpoints: ["leaf1:eth1", "spine:eth1"]
+    # Underlay: leaf2 to spine
+    - endpoints: ["leaf2:eth1", "spine:eth2"]
+    # MLAG peer-link between leaf1 and leaf2
+    - endpoints: ["leaf1:eth2", "leaf2:eth2"]
+    # Dual-attached host ports (simulated)
+    - endpoints: ["leaf1:eth3", "leaf2:eth3"]
+
+mgmt:
+  network: mgmt-net
+  ipv4-subnet: 172.20.20.0/24

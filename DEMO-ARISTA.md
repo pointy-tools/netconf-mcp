@@ -76,6 +76,10 @@ Domain views provide compact, agent-friendly representations of specific network
 - `bgp` — BGP configuration and neighbor state
 - `lldp` — LLDP neighbor discovery
 - `routing` — Static route configuration
+- `routing-policy` — Route maps and prefix lists
+- `acls` — Access control lists (IPv4/IPv6)
+- `mlag` — Multi-chassis LAG configuration (arista-proprietary)
+- `evpn-vxlan` — EVPN/VXLAN overlay configuration
 
 ### Example: System Domain View
 
@@ -337,6 +341,166 @@ Domain views provide compact, agent-friendly representations of specific network
 }
 ```
 
+### Example: Routing Policy Domain View
+
+```json
+{
+  "domain": "routing-policy",
+  "summary": {
+    "prefix_list_count": 2,
+    "route_map_count": 2,
+    "prefix_list_names": ["PL-DEFAULT-ROUTES", "PL-NETWORKS"],
+    "route_map_names": ["RM-BGP-IN", "RM-BGP-OUT"]
+  },
+  "prefix_lists": [
+    {
+      "name": "PL-DEFAULT-ROUTES",
+      "entries": [
+        {"sequence": 10, "action": "permit", "prefix": "0.0.0.0/0", "mask_length_range": "0..32"},
+        {"sequence": 20, "action": "permit", "prefix": "10.0.0.0/8", "mask_length_range": "8..32"}
+      ]
+    },
+    {
+      "name": "PL-NETWORKS",
+      "entries": [
+        {"sequence": 10, "action": "permit", "prefix": "172.16.0.0/12", "mask_length_range": "12..32"},
+        {"sequence": 20, "action": "permit", "prefix": "192.168.0.0/16", "mask_length_range": "16..32"}
+      ]
+    }
+  ],
+  "route_maps": [
+    {
+      "name": "RM-BGP-IN",
+      "entries": [
+        {"sequence": 10, "action": "permit", "match": {"prefix_list": "PL-NETWORKS"}, "set": {"local_preference": 200}}
+      ]
+    },
+    {
+      "name": "RM-BGP-OUT",
+      "entries": [
+        {"sequence": 10, "action": "permit", "match": {"ip_address": "prefix-list:PL-DEFAULT-ROUTES"}, "set": {"metric": 100}}
+      ]
+    }
+  ],
+  "analysis_warnings": []
+}
+```
+
+### Example: ACLs Domain View
+
+```json
+{
+  "domain": "acls",
+  "summary": {
+    "acl_count": 3,
+    "ipv4_acl_count": 2,
+    "ipv6_acl_count": 1,
+    "acl_names": ["ACL-EDGE-IN", "ACL-EDGE-OUT", "ACL-VRF-FILTER"]
+  },
+  "acls": [
+    {
+      "name": "ACL-EDGE-IN",
+      "type": "ACL_IPV4",
+      "sequence_entries": [
+        {"sequence": 10, "action": "permit", "protocol": "tcp", "source_prefix": "10.0.0.0/8", "destination_prefix": "any", "destination_port": "443"},
+        {"sequence": 20, "action": "permit", "protocol": "tcp", "source_prefix": "172.16.0.0/12", "destination_prefix": "any", "destination_port": "22"},
+        {"sequence": 30, "action": "deny", "protocol": "ip", "source_prefix": "any", "destination_prefix": "any"}
+      ]
+    },
+    {
+      "name": "ACL-EDGE-OUT",
+      "type": "ACL_IPV4",
+      "sequence_entries": [
+        {"sequence": 10, "action": "permit", "protocol": "tcp", "source_prefix": "any", "destination_prefix": "10.0.0.0/8", "source_port": "443"},
+        {"sequence": 20, "action": "deny", "protocol": "ip", "source_prefix": "any", "destination_prefix": "any"}
+      ]
+    },
+    {
+      "name": "ACL-VRF-FILTER",
+      "type": "ACL_IPV6",
+      "sequence_entries": [
+        {"sequence": 10, "action": "permit", "protocol": "ipv6", "source_prefix": "2001:db8::/32", "destination_prefix": "any"}
+      ]
+    }
+  ],
+  "analysis_warnings": []
+}
+```
+
+### Example: MLAG Domain View
+
+```json
+{
+  "domain": "mlag",
+  "summary": {
+    "mlag_count": 1,
+    "domain_id": "MLAG-DOMAIN-1",
+    "peer_link": "Port-Channel100",
+    "member_interfaces": ["Ethernet49", "Ethernet50"]
+  },
+  "mlag_config": {
+    "domain_id": "MLAG-DOMAIN-1",
+    "peer_address": "10.255.255.1",
+    "peer_link": "Port-Channel100",
+    "source_address": "10.255.255.2",
+    "peer_link_member_interfaces": ["Ethernet49", "Ethernet50"],
+    "mlag_interfaces": [
+      {"interface": "Port-Channel10", "description": "MLAG-to-Access-1"},
+      {"interface": "Port-Channel20", "description": "MLAG-to-Access-2"}
+    ],
+    "data_source": "arista-proprietary"
+  },
+  "analysis_warnings": []
+}
+```
+
+### Example: EVPN/VXLAN Domain View
+
+```json
+{
+  "domain": "evpn-vxlan",
+  "summary": {
+    "vlan_count": 2,
+    "l2vni_count": 2,
+    "l3vni_count": 1,
+    "evpn_instance_count": 1
+  },
+  "vxlan_config": {
+    "source_interface": "Loopback1",
+    "udp_port": 4789,
+    "vlans": [
+      {
+        "vlan_id": 10,
+        "vlan_name": "DATA",
+        "vni": 10010,
+        "gateway_interface": "Vlan10"
+      },
+      {
+        "vlan_id": 20,
+        "vlan_name": "VOICE",
+        "vni": 10020,
+        "gateway_interface": "Vlan20"
+      }
+    ],
+    "l3_vni": {
+      "vrf": "TENANT-A",
+      "vni": 50001,
+      "gateway_interface": "Vlan5001"
+    },
+    "data_source": "arista-proprietary"
+  },
+  "evpn_instances": [
+    {
+      "name": "EVPN-TENANTS",
+      "rd": "10.0.1.1:100",
+      "import_rt": ["65000:100"],
+      "export_rt": ["65000:100"]
+    }
+  ],
+  "analysis_warnings": []
+}
+```
+
 ## 3. MCP Tool Usage
 
 ### MCP Tool: `arista.get_domain_view`
@@ -345,7 +509,7 @@ Domain views provide compact, agent-friendly representations of specific network
 
 **Parameters**:
 - `target_ref` (required) — Target device reference (e.g., `target://lab/arista-ceos`)
-- `domain` (required) — Domain to query (system, interfaces, vlans, vrfs, lags, bgp, lldp, routing)
+- `domain` (required) — Domain to query (system, interfaces, vlans, vrfs, lags, bgp, lldp, routing, routing-policy, acls, mlag, evpn-vxlan)
 - `inventory_path` (optional) — Path to inventory file (default: `lab-inventory.json`)
 
 **Example MCP Request**:
@@ -403,12 +567,6 @@ Arista EOS uses OpenConfig YANG models with namespace prefixes. The inventory mu
 
 ## 5. Future Work
 
-### Planned Domains (from user priorities):
-1. **MLAG** — Multi-chassis LAG configuration and state
-2. **EVPN/VXLAN** — Overlay network configuration
-3. **ACLs** — Access control list rules
-4. **Routing Policy** — Route-maps and prefix-lists
-
 ### Hardware Validation
 - Physical Arista switch testing (separate phase)
 - Validation against multiple EOS versions
@@ -429,7 +587,7 @@ python -m pytest -q tests/integration/test_mcp_flow.py -k arista
 python -m pytest -q
 ```
 
-**Current Status**: ✅ 85 tests passing
+**Current Status**: ✅ 133 tests passing
 
 ## 7. Safety Notes
 

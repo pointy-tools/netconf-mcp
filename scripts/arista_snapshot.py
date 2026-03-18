@@ -56,6 +56,14 @@ def main() -> None:
     print(f"VLANs: {len(snapshot.vlans)}")
     print(f"VRFs: {len(snapshot.vrfs)}")
     print(f"Static routes: {len(snapshot.static_routes)}")
+    print(f"Prefix sets: {len(snapshot.prefix_sets)}")
+    print(f"Routing policies: {len(snapshot.routing_policies)}")
+    print(f"ACL sets: {len(snapshot.acl_sets)}")
+    print(f"ACL bindings: {len(snapshot.acl_bindings)}")
+    print(f"MLAG: {'enabled' if snapshot.mlag else 'disabled'}")
+    print(f"MLAG interfaces: {len(snapshot.mlag_interfaces)}")
+    print(f"EVPN instances: {len(snapshot.evpn_instances)}")
+    print(f"VXLAN mappings: {len(snapshot.vxlan_mappings)}")
     if snapshot.warnings:
         print(f"Warnings: {len(snapshot.warnings)}")
         for warning in snapshot.warnings:

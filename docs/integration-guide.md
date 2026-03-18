@@ -177,6 +177,10 @@ Supported domains:
 - `lldp` — LLDP neighbor discovery
 - `system` — Hostname, version, platform
 - `routing` — Static routes by VRF
+- `routing-policy` — Route maps and prefix lists
+- `acls` — Access control lists (IPv4/IPv6)
+- `mlag` — Multi-chassis LAG configuration (arista-proprietary)
+- `evpn-vxlan` — EVPN/VXLAN overlay configuration
 
 Example response for `interfaces` domain:
 
@@ -249,6 +253,138 @@ Example response for `routing` domain:
       {"vrf": "default", "destination_prefix": "10.50.0.0/16", "next_hop": "10.0.0.2", "interface": "Ethernet1"},
       {"vrf": "MGMT", "destination_prefix": "192.168.100.0/24", "next_hop": "172.16.0.1", "interface": "Management1"}
     ]
+  }
+}
+```
+
+Example response for `routing-policy` domain:
+
+```json
+{
+  "status": "ok",
+  "vendor": "arista",
+  "payload": {
+    "domain": "routing-policy",
+    "summary": {
+      "prefix_list_count": 2,
+      "route_map_count": 2,
+      "prefix_list_names": ["PL-DEFAULT-ROUTES", "PL-NETWORKS"],
+      "route_map_names": ["RM-BGP-IN", "RM-BGP-OUT"]
+    },
+    "prefix_lists": [
+      {
+        "name": "PL-DEFAULT-ROUTES",
+        "entries": [
+          {"sequence": 10, "action": "permit", "prefix": "0.0.0.0/0", "mask_length_range": "0..32"},
+          {"sequence": 20, "action": "permit", "prefix": "10.0.0.0/8", "mask_length_range": "8..32"}
+        ]
+      }
+    ],
+    "route_maps": [
+      {
+        "name": "RM-BGP-IN",
+        "entries": [
+          {"sequence": 10, "action": "permit", "match": {"prefix_list": "PL-NETWORKS"}, "set": {"local_preference": 200}}
+        ]
+      }
+    ],
+    "analysis_warnings": []
+  }
+}
+```
+
+Example response for `acls` domain:
+
+```json
+{
+  "status": "ok",
+  "vendor": "arista",
+  "payload": {
+    "domain": "acls",
+    "summary": {
+      "acl_count": 2,
+      "ipv4_acl_count": 2,
+      "ipv6_acl_count": 0,
+      "acl_names": ["ACL-EDGE-IN", "ACL-EDGE-OUT"]
+    },
+    "acls": [
+      {
+        "name": "ACL-EDGE-IN",
+        "type": "ACL_IPV4",
+        "sequence_entries": [
+          {"sequence": 10, "action": "permit", "protocol": "tcp", "source_prefix": "10.0.0.0/8", "destination_prefix": "any", "destination_port": "443"},
+          {"sequence": 20, "action": "deny", "protocol": "ip", "source_prefix": "any", "destination_prefix": "any"}
+        ]
+      }
+    ],
+    "analysis_warnings": []
+  }
+}
+```
+
+Example response for `mlag` domain:
+
+```json
+{
+  "status": "ok",
+  "vendor": "arista",
+  "payload": {
+    "domain": "mlag",
+    "summary": {
+      "mlag_count": 1,
+      "domain_id": "MLAG-DOMAIN-1",
+      "peer_link": "Port-Channel100",
+      "member_interfaces": ["Ethernet49", "Ethernet50"]
+    },
+    "mlag_config": {
+      "domain_id": "MLAG-DOMAIN-1",
+      "peer_address": "10.255.255.1",
+      "peer_link": "Port-Channel100",
+      "source_address": "10.255.255.2",
+      "peer_link_member_interfaces": ["Ethernet49", "Ethernet50"],
+      "mlag_interfaces": [
+        {"interface": "Port-Channel10", "description": "MLAG-to-Access-1"}
+      ],
+      "data_source": "arista-proprietary"
+    },
+    "analysis_warnings": []
+  }
+}
+```
+
+Example response for `evpn-vxlan` domain:
+
+```json
+{
+  "status": "ok",
+  "vendor": "arista",
+  "payload": {
+    "domain": "evpn-vxlan",
+    "summary": {
+      "vlan_count": 2,
+      "l2vni_count": 2,
+      "l3vni_count": 1,
+      "evpn_instance_count": 1
+    },
+    "vxlan_config": {
+      "source_interface": "Loopback1",
+      "udp_port": 4789,
+      "vlans": [
+        {"vlan_id": 10, "vlan_name": "DATA", "vni": 10010, "gateway_interface": "Vlan10"},
+        {"vlan_id": 20, "vlan_name": "VOICE", "vni": 10020, "gateway_interface": "Vlan20"}
+      ],
+      "l3_vni": {"vrf": "TENANT-A", "vni": 50001, "gateway_interface": "Vlan5001"},
+      "data_source": "arista-proprietary"
+    },
+    "evpn_instances": [
+      {
+        "name": "EVPN-TENANTS",
+        "rd": "10.0.1.1:100",
+        "import_rt": ["65000:100"],
+        "export_rt": ["65000:100"]
+      }
+    ],
+    "analysis_warnings": []
   }
 }
 ```

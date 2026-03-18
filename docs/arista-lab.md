@@ -230,7 +230,7 @@ Available Arista MCP tools:
 
 | Tool | Description |
 |------|-------------|
-| `arista.get_domain_view` | Query compact domain views (interfaces, vlans, vrfs, lags, bgp, lldp, system, routing) |
+| `arista.get_domain_view` | Query compact domain views (interfaces, vlans, vrfs, lags, bgp, lldp, system, routing, routing-policy, acls, mlag, evpn-vxlan) |
 
 Example MCP tool call:
 
@@ -277,6 +277,63 @@ Example response:
 | `lldp` | LLDP neighbor discovery | `get_domain_view(snapshot, "lldp")` |
 | `system` | Hostname, version, platform | `get_domain_view(snapshot, "system")` |
 | `routing` | Static routes by VRF | `get_domain_view(snapshot, "routing")` |
+| `routing-policy` | Route maps and prefix lists | `get_domain_view(snapshot, "routing-policy")` |
+| `acls` | Access control lists (IPv4/IPv6) | `get_domain_view(snapshot, "acls")` |
+| `mlag` | Multi-chassis LAG config (arista-proprietary) | `get_domain_view(snapshot, "mlag")` |
+| `evpn-vxlan` | EVPN/VXLAN overlay configuration | `get_domain_view(snapshot, "evpn-vxlan")` |
+
+## Validation Commands for New Domains
+
+Test the newly implemented domains with these commands:
+
+```bash
+# Collect a snapshot first
+python scripts/arista_snapshot.py \
+  --inventory lab-inventory.json \
+  --target-ref target://lab/arista \
+  --hostkey-policy accept-new \
+  --output arista-snapshot.json
+
+# Query routing policy domain
+python -c "
+import json
+from pathlib import Path
+from netconf_mcp.vendors.arista import get_domain_view
+snapshot = json.loads(Path('arista-snapshot.json').read_text())
+view = get_domain_view(snapshot, 'routing-policy')
+print(json.dumps(view, indent=2))
+"
+
+# Query ACLs domain
+python -c "
+import json
+from pathlib import Path
+from netconf_mcp.vendors.arista import get_domain_view
+snapshot = json.loads(Path('arista-snapshot.json').read_text())
+view = get_domain_view(snapshot, 'acls')
+print(json.dumps(view, indent=2))
+"
+
+# Query MLAG domain
+python -c "
+import json
+from pathlib import Path
+from netconf_mcp.vendors.arista import get_domain_view
+snapshot = json.loads(Path('arista-snapshot.json').read_text())
+view = get_domain_view(snapshot, 'mlag')
+print(json.dumps(view, indent=2))
+"
+
+# Query EVPN/VXLAN domain
+python -c "
+import json
+from pathlib import Path
+from netconf_mcp.vendors.arista import get_domain_view
+snapshot = json.loads(Path('arista-snapshot.json').read_text())
+view = get_domain_view(snapshot, 'evpn-vxlan')
+print(json.dumps(view, indent=2))
+"
+```
 
 ## Troubleshooting
 
@@ -316,9 +373,8 @@ The docs intentionally keep hardware validation separate because physical lab ac
 
 ## Future Work
 
-Planned domain additions:
+Hardware validation phase (planned):
 
-- **MLAG** — MLAG peer configuration and state
-- **EVPN/VXLAN** — VXLAN tunnel and VNI configuration
-- **ACLs** — Access control lists and traffic filters
-- **Routing Policy** — Route maps and prefix lists (beyond static routes)
+- Physical Arista switch testing
+- Validation against multiple EOS versions
+- Hardware-specific features (transceivers, optics, etc.)

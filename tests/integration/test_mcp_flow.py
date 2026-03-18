@@ -1053,3 +1053,53 @@ def test_arista_domain_view_rejects_invalid_domain():
 
     assert view["status"] == "error"
     assert view["error"]["error_code"] == "BAD_DOMAIN"
+
+
+def test_arista_domain_view_accepts_new_domains(tmp_path: Path):
+    """Test that new Arista domains (routing-policy, acls, mlag, evpn-vxlan) are accepted."""
+    inventory_path = _write_arista_live_inventory(tmp_path)
+    runtime = create_server(FIXTURES, inventory_path=inventory_path, live_client=DummyLiveClient())
+    tool = runtime.get_server()
+
+    opened = tool._tools["netconf.open_session"]({"target_ref": "target://lab/arista"})
+    session_ref = opened["data"]["session_ref"]
+
+    # Test routing-policy domain
+    view = tool._tools["arista.get_domain_view"](
+        {
+            "session_ref": session_ref,
+            "arguments": {"domain": "routing-policy"},
+        }
+    )
+    assert view["status"] == "ok"
+    assert view["data"]["domain"] == "routing-policy"
+
+    # Test acls domain
+    view = tool._tools["arista.get_domain_view"](
+        {
+            "session_ref": session_ref,
+            "arguments": {"domain": "acls"},
+        }
+    )
+    assert view["status"] == "ok"
+    assert view["data"]["domain"] == "acls"
+
+    # Test mlag domain
+    view = tool._tools["arista.get_domain_view"](
+        {
+            "session_ref": session_ref,
+            "arguments": {"domain": "mlag"},
+        }
+    )
+    assert view["status"] == "ok"
+    assert view["data"]["domain"] == "mlag"
+
+    # Test evpn-vxlan domain
+    view = tool._tools["arista.get_domain_view"](
+        {
+            "session_ref": session_ref,
+            "arguments": {"domain": "evpn-vxlan"},
+        }
+    )
+    assert view["status"] == "ok"
+    assert view["data"]["domain"] == "evpn-vxlan"
