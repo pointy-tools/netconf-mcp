@@ -106,6 +106,22 @@ cp lab-inventory.arista.example.json lab-inventory.json
 
 Reference [`docs/arista-lab.md`](docs/arista-lab.md) for containerlab startup, image, and verification flow details.
 
+## OpenCode Integration
+
+This repository includes OpenCode MCP server configuration in `.opencode/opencode.json`, enabling AI agents to discover and query network devices through the MCP protocol.
+
+**Supported device types:**
+- **Arista EOS** — 12 domains including system, interfaces, VLANs, VRFs, LAGs, BGP, LLDP, routing, MLAG, EVPN/VXLAN, routing-policy, and ACLs
+- **TNSR** — 9 domains including BGP, prefix-lists, route-maps, interfaces, NAT, filters, NACM, management, and platform
+
+**Key capabilities:**
+- Target discovery and session management
+- Domain-specific queries with agent-friendly views
+- Fixture-backed testing for safe development
+- Cross-reference tracking for policy relationships
+
+See [`.opencode/README.md`](.opencode/README.md) for detailed usage instructions, example queries, and lab topology information.
+
 ## Status
 
 What is working now:
