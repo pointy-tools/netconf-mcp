@@ -1,0 +1,20 @@
+{
+  "$schema": "https://opencode.dev/schema/opencode.json",
+  "mcpServers": {
+    "netconf": {
+      "description": "NETCONF MCP server for fixture-first network automation and Arista EOS discovery",
+      "command": "python",
+      "args": [
+        "-m",
+        "netconf_mcp.cli",
+        "--inventory",
+        "lab-inventory.arista.json"
+      ],
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src",
+        "NETCONF_MCP_FIXTURE_ROOT": "${workspaceFolder}/tests/fixtures"
+      }
+    }
+  }
+}
